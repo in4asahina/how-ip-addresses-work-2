@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>IPアドレスのしくみ(2)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=BIZ+UDGothic:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF3E3; --grid:rgba(85,130,50,.22); --paper:#FFFEFB; --ink:#2A2540; --muted:#6B6580;
+  --line:#DCD5E6; --wire:#7A7290;
+  --in:#ECE7FB; --in-edge:#7B66D9; --out:#D9F2E7; --out-edge:#2E9A74;
+  --sig:#F0A23B; --glow:rgba(240,162,59,.42);
+  --ok:#23866A; --ng:#C8384E; --focus:#6A4FD0;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#141A10; --grid:rgba(160,205,120,.13); --paper:#1F1B2D; --ink:#ECE8F6; --muted:#A79FBF;
+    --line:#3A3350; --wire:#8C83A6;
+    --in:#2E2652; --in-edge:#A592F2; --out:#163A2F; --out-edge:#4FC79A;
+    --sig:#FFB85C; --glow:rgba(255,184,92,.35);
+    --ok:#4CCB9E; --ng:#F07A8A; --focus:#B3A3F7; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#141A10; --grid:rgba(160,205,120,.13); --paper:#1F1B2D; --ink:#ECE8F6; --muted:#A79FBF;
+  --line:#3A3350; --wire:#8C83A6;
+  --in:#2E2652; --in-edge:#A592F2; --out:#163A2F; --out-edge:#4FC79A;
+  --sig:#FFB85C; --glow:rgba(255,184,92,.35);
+  --ok:#4CCB9E; --ng:#F07A8A; --focus:#B3A3F7; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+body{
+  margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+  background-image:radial-gradient(circle,var(--grid) 1.5px,transparent 1.9px),radial-gradient(circle,var(--grid) 1.5px,transparent 1.9px);
+  background-size:26px 26px;background-position:0 0,13px 13px;
+  font-family:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+  font-size:16px;line-height:1.7;
+}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+
+
+/* top screen */
+body:not(.is-top) #top{display:none}
+body.is-top header,body.is-top main,body.is-top .foot,body.is-top .bar{display:none}
+#top{min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:32px 20px}
+.top-in{width:100%;max-width:760px;text-align:center}
+.top-lead{margin-left:auto!important;margin-right:auto!important}
+.top-sub{margin:0 0 10px;color:var(--muted);font-weight:700;letter-spacing:.06em}
+.top-ttl{margin:0;font-size:clamp(1.9rem,7vw,3.6rem);line-height:1.2;letter-spacing:.02em;white-space:nowrap}
+.top-lead{margin:20px 0 48px;font-size:1.05rem;max-width:40em}
+@media (max-width:720px){.pc-br{display:none}}
+.btn.start{font-size:1.25rem;padding:14px 44px;border-radius:12px}
+/* カーソルを合わせる（キーボードで選ぶ）と少し大きくなり、離れると元の大きさに戻る */
+.btn.start{transition:transform .18s ease}
+.btn.start:hover,.btn.start:focus-visible{transform:scale(1.08)}
+.top-note{margin:12px 0 0;color:var(--muted);font-size:.9rem}
+
+/* header */
+header{padding:18px 0 6px}
+.brand{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.brand h1{margin:0;font-size:1.5rem;letter-spacing:.04em;cursor:default;user-select:none}
+.brand small{color:var(--muted)}
+/* 左右の余白は、選択中の二重線（外側に5px）が欠けない幅にする */
+.rail{display:flex;align-items:center;overflow-x:auto;padding:14px 7px 12px;gap:0;scrollbar-width:none}
+.rail::-webkit-scrollbar{display:none}
+.rail .seg-w{flex:1 0 6px;min-width:6px;height:3px;background:var(--line)}
+.rail .seg-w.lit{background:var(--ok)}
+.node{flex:0 0 auto;min-width:32px;height:32px;padding:0 8px;border-radius:16px;border:2px solid var(--line);
+  background:var(--paper);display:grid;place-items:center;font-weight:700;font-size:.85rem;cursor:pointer;white-space:nowrap}
+.node.done{background:var(--ok);border-color:var(--ok);color:#fff}
+.node.cur{border-color:var(--ink);box-shadow:0 0 0 3px var(--bg),0 0 0 5px var(--ink)}
+.node:disabled{opacity:.4;cursor:not-allowed}
+
+/* main */
+main{padding:6px 0 24px}
+.sheet{background:var(--paper);border:1px solid var(--line);border-top:5px solid var(--in-edge);border-radius:14px;padding:22px 22px 26px}
+.ttl{display:flex;align-items:center;gap:14px;margin:0 0 6px}
+.ttl .no{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:2.4rem;line-height:1;color:var(--in-edge);
+  min-width:1.2em}
+.ttl .no:empty{display:none}
+.ttl h2{margin:0;font-size:1.35rem;line-height:1.35}
+.ttl .sub{display:block;font-size:.9rem;color:var(--muted);font-weight:400}
+.howto{margin:6px 0 18px;padding:0;list-style:none;color:var(--ink)}
+.howto li{padding-left:1.2em;position:relative}
+.howto li::before{content:"";position:absolute;left:.2em;top:.75em;width:.45em;height:.45em;border-radius:50%;background:var(--in-edge)}
+.cols{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:24px;align-items:start}
+@media (max-width:760px){.cols{grid-template-columns:1fr}}
+p{margin:.4em 0}
+.note{color:var(--muted);font-size:.9rem}
+
+/* figures */
+.fig{position:relative;width:100%}
+.fig svg{display:block;width:100%;height:auto;overflow:visible}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+.scroll .fig{min-width:640px}
+.scroll .fig.wide{min-width:820px}
+.t.big{font-size:26px}
+.wide .ts{font-size:17px}
+.hint-sc{display:none;text-align:center;font-size:.8rem;color:var(--muted);margin:2px 0 0}
+@media (max-width:700px){.hint-sc{display:block}}
+.ov{position:absolute;transform:translate(-50%,-50%)}
+.cap{font-size:.85rem;color:var(--muted);margin:4px 0 0;text-align:center}
+.w{fill:none;stroke:var(--wire);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.w.on{stroke:var(--sig);stroke-width:3.6}
+.g{fill:var(--paper);stroke:var(--ink);stroke-width:2.2;stroke-linejoin:round}
+.dot{fill:var(--ink)} .dot.on{fill:var(--sig)}
+.t{fill:var(--ink);font-size:15px;font-family:inherit;font-weight:700}
+.ts{fill:var(--muted);font-size:12px;font-family:inherit}
+.blk2{fill:var(--paper);stroke:var(--ink);stroke-width:2.4}
+.t.port{font-size:22px}
+.viewsw{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0 6px}
+.blk{fill:var(--paper);stroke:var(--ink);stroke-width:2;stroke-dasharray:6 4}
+.bat-l{stroke:var(--ink);stroke-width:3}.bat-s{stroke:var(--ink);stroke-width:7}
+.bulb{fill:var(--paper);stroke:var(--ink);stroke-width:2}
+.fil{fill:none;stroke:var(--ink);stroke-width:1.6}
+.glow{fill:var(--glow);opacity:0;transition:opacity .25s}
+.lamp.lit .glow{opacity:1}.lamp.lit .bulb{fill:var(--sig)}
+.sw{stroke:var(--ink);stroke-width:3;stroke-linecap:round;transition:transform .18s}
+.hotsw{cursor:pointer}
+
+/* value boxes */
+.box{min-width:2.7rem;height:2.5rem;padding:0 .4rem;display:grid;place-items:center;border-radius:7px;
+  font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.3rem;line-height:1}
+.box.in{background:var(--in);border:2px solid var(--in-edge);cursor:pointer}
+.box.in:hover{filter:brightness(1.04)}
+select.dd{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%235B6B7D' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .5rem center;background-size:.7rem auto;text-align:center;text-align-last:center;height:2.5rem;min-width:4.4rem;padding:0 1.5rem;border:2px solid var(--in-edge);background-color:var(--in);border-radius:7px;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.2rem;color:var(--ink);cursor:pointer}
+.ddw{position:relative;display:inline-block;vertical-align:middle}
+select.dd-name{min-width:8.5rem;font-family:inherit;font-size:1.05rem}
+.gates3 figcaption{display:flex;justify-content:center;align-items:center;gap:4px;margin-top:6px}
+/* リストの中は空白、未選択のときだけ枠の上に「？」を重ねて表示 */
+/* 表示位置：四角の左端から▽の左側までの中央（▽は右端から約1.2remの幅） */
+.ddw::after{content:attr(data-v);position:absolute;left:calc(50% - .6rem);top:50%;transform:translate(-50%,-50%);pointer-events:none;color:var(--ink);font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.2rem;white-space:nowrap}
+.ddw.nm::after{font-family:"BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;font-size:1.05rem}
+.ddw.blank::after{color:var(--muted);font-family:"BIZ UDGothic",monospace;font-size:1.15rem}
+select.dd{color:transparent!important}
+select.dd:-moz-focusring{color:transparent;text-shadow:none}
+select.dd option{color:var(--ink);background:var(--paper);text-align:left}
+.box.out{background:var(--out);border:2px solid var(--out-edge)}
+.box.blank{color:var(--muted);font-size:1rem}
+.lbl{font-weight:700;font-size:.9rem;text-align:center;line-height:1.2;white-space:nowrap}
+.io{display:flex;align-items:center;gap:6px}
+
+/* segmented 0/1 */
+.seg{display:inline-flex;border:2px solid var(--in-edge);border-radius:8px;overflow:hidden;background:var(--in);vertical-align:middle}
+.seg button{border:0;background:transparent;width:2.3rem;height:2.2rem;cursor:pointer;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.1rem;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--in-edge)}
+.seg button[aria-pressed="true"]{background:var(--in-edge);color:#fff}
+.mk{display:inline-block;width:1.6em;text-align:center;font-weight:700;font-size:1.25rem}
+.mk.ok{color:var(--ok)}.mk.ng{color:var(--ng)}
+
+/* tables */
+table.tt{border-collapse:collapse;margin:0 auto}
+.tt th,.tt td{border:1px solid var(--line);padding:4px 10px;text-align:center}
+.tt th{background:color-mix(in srgb,var(--line) 35%,transparent);font-size:.9rem}
+.tt td.v{font-family:"BIZ UDGothic",monospace;font-weight:700}
+.tt td.m{border:0;padding:0 2px;min-width:2em}
+.tt.sm td,.tt.sm th{padding:2px 6px}
+/* 真理値表の列幅をそろえる（解答ボックスが入る幅） */
+.tt th:not(.m),.tt td:not(.m){width:5.6rem;min-width:5.6rem}
+.tt.sm th:not(.m),.tt.sm td:not(.m){width:3.4rem;min-width:3.4rem}
+.tt th{padding-left:2px;padding-right:2px;line-height:1.35}
+.tt .cyc{min-width:2.3rem;height:2.1rem;font-size:1.1rem}
+.tt input.txt::placeholder{color:var(--muted);opacity:1}
+/* 入力中（カーソルがあるとき）は「？」を隠す */
+.tt input.txt:focus::placeholder{color:transparent}
+.tt input.txt{width:4.2rem;height:2.2rem;text-align:center;border:2px solid var(--in-edge);background:var(--in);border-radius:7px;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.1rem}
+.tblgrid{display:flex;gap:28px;flex-wrap:wrap;justify-content:center}
+
+/* problem cards */
+.probs{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px}
+.probs.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:640px){.probs.two{grid-template-columns:1fr}}
+.probs.two .prob svg{max-width:300px}
+/* Step4以降は○×を出さない */
+.nomark .m{display:none}
+.prob{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:8px}
+.prob .qn{font-weight:700;color:var(--muted);font-size:.9rem}
+.prob svg{width:100%;height:auto;display:block}
+
+/* message */
+.msg{margin:18px 0 0;padding:12px 16px;border-radius:10px;border:2px solid var(--line);font-weight:700}
+.msg.good{border-color:var(--ok);color:var(--ok)}
+.msg.bad{border-color:var(--ng);color:var(--ng)}
+
+/* summary step10 */
+.sumrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:14px;align-items:center;border-top:1px solid var(--line);padding:14px 0}
+.sumrow:first-of-type{border-top:0}
+.sumrow h3{margin:0;font-size:1.05rem}
+.sumrow .expr{font-family:"BIZ UDGothic",monospace;color:var(--muted);font-size:.95rem}
+.s10sel+.s10sel{margin-top:10px}
+.sumrow select{width:100%;max-width:22rem;padding:8px 10px;border:2px solid var(--in-edge);background:var(--in);border-radius:8px}
+@media (max-width:640px){.sumrow{grid-template-columns:1fr}}
+
+/* intro */
+.gates3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
+.gates3 figure{margin:0;border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+.gates3 figcaption{font-weight:700;font-size:1.1rem}
+.legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin:10px 0}
+.legend span.sw-c{display:inline-block;width:1.4rem;height:1.1rem;border-radius:4px;vertical-align:-3px;margin-right:4px}
+.try{margin-top:16px;padding:14px;border:2px dashed var(--in-edge);border-radius:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+
+/* footer nav */
+.bar{position:sticky;bottom:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border-top:1px solid var(--line);
+  padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px))}
+.bar .wrap{display:flex;align-items:center;gap:10px;flex-wrap:nowrap}
+.status{flex:1 1 auto;min-width:0;text-align:center;font-size:1.15rem;font-weight:700;color:var(--muted);line-height:1.35}
+.btn{white-space:nowrap}
+@media (max-width:520px){.btn{padding:8px 9px;font-size:.88rem}.status{font-size:1rem;min-width:4.8em}.bar .wrap{gap:8px}}
+.cols .fig{max-width:520px}
+.status.clear{color:var(--ok)}
+.btn{border:2px solid var(--ink);background:var(--paper);border-radius:10px;padding:8px 16px;font-weight:700;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--paper)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn.ready{animation:pulse 1.2s ease-out 1}
+@keyframes pulse{0%{box-shadow:0 0 0 0 var(--glow)}100%{box-shadow:0 0 0 14px transparent}}
+.foot{display:flex;justify-content:flex-end;padding:0 0 18px}
+.linkbtn{background:none;border:0;color:var(--muted);text-decoration:underline;cursor:pointer;font-size:.85rem}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* はじめに：スマホでは縦1列 */
+@media (max-width:640px){.gates3{grid-template-columns:1fr}.gates3 svg{max-width:200px!important;margin:0 auto}}
+/* 見出し「論理回路のしくみ」の上の余白 */
+header.wrap{padding-top:26px}
+/* 発展3〜9 */
+.sub3{margin:22px 0 4px;font-size:1.1rem;border-left:5px solid var(--ink);padding-left:10px}
+.pair{display:flex;flex-wrap:wrap;gap:18px 28px;align-items:center;margin:8px 0}
+.pair>div:first-child{flex:1 1 360px;min-width:0;max-width:600px}
+.pair.pw>div:first-child{max-width:none}
+.pair>div:last-child{flex:0 0 auto}
+.sfig svg{width:100%}
+.whichg{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-weight:700}
+.tt.tgt td,.tt.tgt th{background:color-mix(in srgb,var(--out) 45%,transparent)}
+.bld{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:6px 0 10px;background:var(--paper)}
+.bld-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.chip-g{display:inline-flex;align-items:center;gap:6px;border:2px solid var(--in-edge);background:var(--in);border-radius:10px;padding:3px 10px 3px 6px;cursor:grab;touch-action:none;font-weight:700;user-select:none;-webkit-user-select:none}
+.chip-g svg{width:58px;height:30px;pointer-events:none}
+.chip-g span{pointer-events:none}
+.chip-g.sel{background:var(--sig);border-color:var(--sig);color:#2A1D00}
+.btn.sm{padding:4px 12px;font-size:.9rem}
+.bsvg{-webkit-tap-highlight-color:transparent;touch-action:pan-x pan-y;user-select:none;-webkit-user-select:none}
+.bsvg [data-b="pin"],.bsvg [data-b="slot"]{touch-action:none;cursor:pointer}
+.pin{fill:var(--paper);stroke:var(--in-edge);stroke-width:3}
+.pin.sel{fill:var(--sig);stroke:var(--sig)}
+.pinhit{fill:transparent}
+[data-b="pin"]:hover .pin{fill:var(--in)}
+.slot{fill:transparent;stroke:var(--line);stroke-width:2;stroke-dasharray:7 5}
+.slot.hot{stroke:var(--sig);fill:color-mix(in srgb,var(--sig) 10%,transparent)}
+.wirehit{fill:none;stroke:transparent;stroke-width:16;cursor:pointer}
+.delb{cursor:pointer}.delb circle{fill:var(--paper);stroke:var(--ng);stroke-width:2}.delb text{fill:var(--ng);font-weight:700;font-size:16px}
+.tg{cursor:pointer}.tg rect{fill:var(--in);stroke:var(--in-edge);stroke-width:2}.tg text,.ob text{fill:var(--ink);font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:20px}
+.ob rect{fill:var(--out);stroke:var(--out-edge);stroke-width:2}
+.tmpw{fill:none;stroke:var(--sig);stroke-width:3;stroke-dasharray:6 4;pointer-events:none}
+.ghost{position:fixed;z-index:60;pointer-events:none;transform:translate(-50%,-50%);background:var(--sig);color:#2A1D00;font-weight:700;padding:6px 12px;border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.addcol{display:grid;grid-template-columns:repeat(5,2.6em);text-align:center;font-family:"BIZ UDGothic",monospace;font-weight:700;margin:6px 0 14px;row-gap:2px}
+.addcol .ul{border-top:2px solid var(--ink);padding-top:2px}
+/* Step6〜8：回路図の位置（高さ）をそろえる */
+.howto.ha{min-height:calc(3 * 1.7em + 4px)}
+@media (max-width:900px){.howto.ha{min-height:calc(4 * 1.7em + 4px)}}
+@media (max-width:560px){.howto.ha{min-height:calc(8 * 1.7em + 4px)}}
+.node.sq{border-radius:6px;min-width:30px;padding:0 6px}
+.railtag{flex:0 0 auto;font-weight:700;font-size:.8rem;color:var(--ink);border:2px solid var(--ink);border-radius:6px;padding:1px 6px;background:var(--paper);white-space:nowrap}
+/* タブレット幅でも進捗バーが1行に収まるよう小さくする（スマホは横にスワイプ） */
+@media (max-width:900px){.rail .seg-w{min-width:2px;flex-basis:2px}.node{min-width:28px;height:28px;padding:0 6px;font-size:.78rem}.node.sq{min-width:26px;padding:0 4px}.railtag{font-size:.72rem;padding:1px 4px}}
+select.dd-ff{min-width:5.2rem;font-family:inherit;font-size:1.05rem}
+.tt.ff th:not(.m),.tt.ff td:not(.m){width:7rem;min-width:7rem}
+.exsel{width:100%;max-width:34rem;padding:8px 10px;border:2px solid var(--in-edge);background:var(--in);border-radius:8px}
+/* クリアしたときに、白い枠の中央に数秒表示するダイアログ（すりガラス風） */
+.cleartoast{position:fixed;left:50%;top:50%;z-index:80;transform:translate(-50%,-40%);opacity:0;pointer-events:none;
+  background:var(--ok);white-space:nowrap;width:max-content;max-width:94vw;
+  border:0;border-radius:16px;padding:clamp(12px,3vw,22px) clamp(22px,7vw,56px);text-align:center;
+  box-shadow:0 10px 30px rgba(20,120,60,.25);transition:opacity .25s ease,transform .25s ease}
+.cleartoast.show{opacity:1;transform:translate(-50%,-50%)}
+/* 画面が狭いときは文字を小さくして、改行せずに枠の中へ1行で収める */
+.cleartoast .ct-txt{display:block;white-space:nowrap;font-size:clamp(1.3rem,7vw,2.1rem);font-weight:700;letter-spacing:.3em;margin-right:-.3em;color:#fff;line-height:1.2;text-shadow:0 1px 2px rgba(0,70,35,.35)}
+@media (prefers-reduced-motion:reduce){.cleartoast{transition:none}}
+/* 出力のマスは、上下の中心が線の高さにくるようにする（見出しはマスの上に浮かせる） */
+.obw{position:relative}
+.obw .obl{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:3px}
+/* ★ ダッシュボード */
+.dsum{display:flex;flex-wrap:wrap;gap:18px 32px;align-items:center;margin:8px 0 6px;padding:16px;border:1px solid var(--line);border-radius:12px}
+.dtotal .pct{font-family:"BIZ UDGothic",monospace;font-size:3.6rem;line-height:1;font-weight:700}
+.dtotal .pct small{font-size:1.4rem;margin-left:4px}
+.dbars{flex:1 1 420px;display:grid;gap:8px}
+.dbar{display:grid;grid-template-columns:7.5em 1fr 10em;align-items:center;gap:10px;font-weight:700}
+.dbar .meter{height:14px;border-radius:7px;background:var(--line);overflow:hidden;display:block}
+.dbar .meter i{display:block;height:100%;background:var(--ok)}
+.dbv small{color:var(--muted);font-weight:400}
+.dchips{display:flex;flex-wrap:wrap;gap:6px}
+.dchip{min-width:30px;height:30px;padding:0 6px;border-radius:15px;border:2px solid var(--line);background:var(--paper);font-weight:700;font-size:.85rem;cursor:pointer;color:var(--ink)}
+.dchip.sq{border-radius:6px}
+.dchip.clear{background:var(--ok);border-color:var(--ok);color:#fff}
+.dchip.wip{background:var(--muted);border-color:var(--muted);color:#fff}
+.dchip.mini{display:inline-block;min-width:14px;width:14px;height:14px;padding:0;vertical-align:-2px;cursor:default}
+.dlegend{font-size:.85rem;color:var(--muted)}
+@media (max-width:640px){.dbar{grid-template-columns:1fr}}
+
+/* ダッシュボード：上段（達成率・基本・発展）と、下段（各課題のゲージ） */
+/* 左に達成率、右に基本・発展のゲージを上下に並べる */
+.dtop{display:grid;grid-template-columns:minmax(220px,1fr) 2fr;grid-template-rows:auto auto;gap:12px 14px;margin:8px 0 10px}
+.dtop .dtotal{grid-row:1 / 3;display:flex;flex-direction:column;justify-content:center}
+.dgauge{display:grid;grid-template-columns:6.6em 3.6em 1fr;align-items:center;column-gap:8px}
+.dgauge .dgp{margin:0;font-size:1.7rem;text-align:left}
+.dgauge .note{grid-column:3;margin-top:2px}
+.dtop>div{border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.dgl{font-weight:700;color:var(--muted);font-size:.9rem}
+.dgp{font-family:"BIZ UDGothic",monospace;font-size:2.4rem;font-weight:700;line-height:1.1;margin:4px 0 8px}
+.dgp small{font-size:1rem;margin-left:3px}
+.dtop .meter,.dprow .meter{display:block;height:12px;border-radius:6px;background:var(--line);overflow:hidden}
+.dtop .meter i,.dprow .meter i{display:block;height:100%;background:var(--ok)}
+.dtop .note{margin-top:6px}
+.dpages{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px;margin-top:6px}
+.dph{margin:6px 0 6px;font-size:1rem;border-left:5px solid var(--ink);padding-left:8px}
+.dprow{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(70px,34%) 4.2em;align-items:center;gap:10px;width:100%;
+  border:0;border-bottom:1px solid var(--line);background:none;padding:6px 2px;text-align:left;cursor:pointer;color:var(--ink);font-weight:400}
+.dprow:hover{background:color-mix(in srgb,var(--line) 25%,transparent)}
+.dprow .dchip{cursor:pointer;display:inline-grid;place-items:center}
+.dpn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.92rem}
+.dpc{font-family:"BIZ UDGothic",monospace;font-size:.85rem;color:var(--muted);text-align:right}
+@media (max-width:820px){.dtop{grid-template-columns:1fr}.dtop .dtotal{grid-row:auto}.dpages{grid-template-columns:1fr}}
+@media (max-width:560px){.dgauge{grid-template-columns:4.2em 1fr;row-gap:6px}.dgauge .dgl{grid-row:1;grid-column:1 / 3}.dgauge .dgp{grid-row:2;grid-column:1}.dgauge .meter{grid-row:2;grid-column:2}.dgauge .note{grid-row:3;grid-column:2}}
+@media (max-width:560px){.dprow{grid-template-columns:auto minmax(0,1fr) 4.2em;row-gap:4px}.dprow .meter{grid-column:2 / 4;grid-row:2}}
+/* ダッシュボードの学習支援機能 */
+.dbox{border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin:12px 0;background:var(--paper)}
+.dbox .dph{margin-top:2px}
+.dph2{margin:6px 0;font-size:.95rem;color:var(--muted)}
+.dmeta{display:block;font-size:.75rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.great{color:var(--ok)}
+.rlab{display:block;font-weight:700;margin:8px 0 4px}
+.reftxt,.codebox{width:100%;border:2px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);color:var(--ink);font:inherit;resize:vertical}
+.codebox{font-family:"BIZ UDGothic",monospace;font-size:.8rem;margin:8px 0 6px;word-break:break-all}
+.dsubmit .who{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:4px 0 10px}
+.dsubmit .who label{display:flex;gap:6px;align-items:center;font-weight:700}
+.dsubmit .who input{border:2px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--paper);width:12rem;color:var(--ink)}
+.dsubmit .who input.nb{width:6rem}
+.subsum{font-size:1rem;padding:8px 12px;border-radius:8px;background:color-mix(in srgb,var(--ok) 8%,transparent);margin-bottom:6px}
+/* クラウド保存 */
+/* 保存IDの見出しを1行目に、保存IDをその下に表示する */
+.saveid-l{font-weight:700;color:var(--muted);font-size:.9rem}
+.saveid{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 4px}
+.saveid b{font-family:"BIZ UDGothic",monospace;font-size:1.8rem;letter-spacing:.12em;padding:2px 12px;border:2px solid var(--ok);border-radius:8px;color:var(--ok);background:var(--paper)}
+.saveurl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.saveurl input{flex:1 1 260px;min-width:0;border:2px solid var(--line);border-radius:8px;padding:6px 10px;font-family:"BIZ UDGothic",monospace;font-size:.85rem;background:var(--paper);color:var(--ink)}
+.cmsg{font-weight:700;margin-left:8px}.cmsg.ok{color:var(--ok)}.cmsg.ng{color:var(--ng)}
+.unsaved{margin:6px 0 0;padding:6px 10px;border-radius:8px;background:color-mix(in srgb,var(--sig) 18%,transparent);font-size:.9rem}
+.loadbox{margin-top:12px;border-top:1px dashed var(--line);padding-top:8px}
+.loadbox summary{cursor:pointer;font-weight:700;font-size:.92rem}
+.loadbox .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.loadbox input{width:11rem;border:2px solid var(--in-edge);border-radius:8px;padding:6px 10px;font-family:"BIZ UDGothic",monospace;font-size:1.05rem;letter-spacing:.08em;background:var(--in);color:var(--ink)}
+.cmodal{position:fixed;inset:0;z-index:90;display:none;place-items:center;background:rgba(25,18,40,.4);padding:16px}
+.cmodal.show{display:grid}
+.cm-box{background:var(--paper);color:var(--ink);border-radius:14px;padding:20px 22px;max-width:440px;width:100%;box-shadow:0 18px 40px rgba(0,0,0,.25)}
+.cm-box h3{margin:0 0 8px;font-size:1.1rem}
+.cm-box p{margin:0 0 16px;line-height:1.7}
+.cm-btns{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+/* ===== IPアドレス教材で追加した部品 ===== */
+/* 数を入れるマス（表の外でも使う） */
+input.txt{height:2.2rem;text-align:center;border:2px solid var(--in-edge);background:var(--in);border-radius:7px;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.05rem;color:var(--ink);padding:0 4px}
+input.txt::placeholder{color:var(--muted);opacity:1}
+input.txt:focus::placeholder{color:transparent}
+input.txt.oct{width:3.3rem}
+input.txt.num{width:6.2rem}
+input.txt.bin{width:8.4rem;letter-spacing:.06em}
+input.txt.demo{background:var(--paper)}
+.ipin{display:inline-flex;align-items:center;gap:1px;white-space:nowrap}
+.ipin .dt{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.2rem;padding:0 1px;line-height:1}
+.ipin .fx{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.05rem;padding:0 2px}
+.mono{font-family:"BIZ UDGothic",monospace;font-weight:700}
+/* 32ビットの帯（8ビットずつ4つ） */
+.bstrip{display:flex;gap:8px;flex-wrap:nowrap;align-items:flex-start}
+.bgrp{display:flex;flex-direction:column;align-items:center;gap:2px}
+.bgrp .cells{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.bc{width:1.12rem;height:1.7rem;display:grid;place-items:center;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:.92rem;background:var(--paper)}
+.bc+.bc{border-left:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.bc.net{background:var(--in)}
+.bc.host{background:var(--out)}
+.bc.hi{background:var(--sig);color:#2A1D00}
+.bdec{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:.95rem}
+.bdot{align-self:center;font-weight:700;font-size:1.2rem;margin-top:-1.4rem}
+.blab{min-width:8.6em;font-weight:700;font-size:.9rem;align-self:center;margin-top:-1.3rem;white-space:nowrap}
+.bline{display:flex;gap:10px;align-items:flex-start;margin:4px 0}
+.bline.op .bc{background:transparent}
+.bsep{border-top:2px solid var(--ink);margin:2px 0 6px}
+.sp1{height:1.7em}
+.zh{margin:6px 0 8px;font-size:1rem;font-weight:700;border-left:4px solid var(--ink);padding-left:8px}
+.swatch{display:inline-block;width:1.2rem;height:1rem;border-radius:3px;vertical-align:-2px;margin-right:4px;border:1px solid var(--line)}
+/* 1オクテット（8ビット）の位取り */
+.octrow{display:flex;align-items:flex-end;gap:6px;flex-wrap:wrap;margin:8px 0}
+.octrow .pv{font-size:.8rem;color:var(--muted);text-align:center;font-family:"BIZ UDGothic",monospace}
+.octrow .bcol{display:flex;flex-direction:column;align-items:center;gap:2px}
+.octrow .eq{font-weight:700;font-size:1.4rem;padding:0 4px 6px}
+.calc{font-family:"BIZ UDGothic",monospace;color:var(--muted);margin:2px 0 0}
+/* 問題の行 */
+.qlist{margin:8px 0}
+.qrow{display:grid;grid-template-columns:minmax(0,1fr) auto 1.8em;gap:10px 12px;align-items:center;border-top:1px solid var(--line);padding:9px 2px}
+.qrow:first-child{border-top:0}
+.qrow .qn{font-weight:700;color:var(--muted);margin-right:6px}
+.qrow .qa{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:640px){.qrow{grid-template-columns:minmax(0,1fr) 1.8em}.qrow .qa{grid-column:1;justify-content:flex-start}.qrow .mk{grid-column:2;grid-row:1 / 3;align-self:center}}
+select.tsel{max-width:100%;padding:7px 10px;border:2px solid var(--in-edge);background:var(--in);border-radius:8px;font-weight:700;color:var(--ink);cursor:pointer}
+.tselw{position:relative;display:inline-block;max-width:100%}
+.tselw.blank::after{content:"？（選ぶ）";position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:400;pointer-events:none;white-space:nowrap}
+select.tsel{min-width:8.5rem}
+select.tsel option{color:var(--ink);background:var(--paper);font-weight:400}
+/* 説明の囲み */
+.kbox{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:10px 0;background:color-mix(in srgb,var(--in) 30%,transparent)}
+.kbox h4{margin:0 0 4px;font-size:1rem}
+.kbox p{margin:.2em 0}
+.tbl{border-collapse:collapse;margin:8px 0}
+.tbl th,.tbl td{border:1px solid var(--line);padding:5px 10px;text-align:center}
+.tbl th{background:color-mix(in srgb,var(--line) 35%,transparent);font-size:.9rem}
+.tbl td.l{text-align:left}
+.cmd{font-family:"BIZ UDGothic",monospace;font-size:.92rem;line-height:1.6;background:#262138;color:#ECE8F6;border-radius:10px;padding:12px 14px;overflow-x:auto;white-space:pre;margin:8px 0}
+.cmd .hl{color:#FFB85C}
+.tagline{display:inline-block;font-size:.8rem;font-weight:700;border:2px solid var(--ink);border-radius:6px;padding:0 6px;margin-right:6px}
+.verdict{margin:10px 0 0;padding:10px 14px;border-radius:10px;border:2px solid var(--line);font-weight:700}
+.verdict.same{border-color:var(--ok);color:var(--ok)}
+.verdict.diff{border-color:var(--in-edge);color:var(--in-edge)}
+.verdict.err{border-color:var(--line);color:var(--muted)}
+.segsel{display:inline-flex;flex-wrap:wrap;border:2px solid var(--in-edge);border-radius:8px;overflow:hidden;background:var(--in);vertical-align:middle}
+.segsel button{border:0;background:transparent;min-width:3rem;height:2.2rem;padding:0 10px;cursor:pointer;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1rem;color:var(--muted)}
+.segsel button+button{border-left:1px solid var(--in-edge)}
+.segsel button[aria-pressed="true"]{background:var(--in-edge);color:#fff}
+.ctl{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0}
+.ctl input[type=range]{flex:1 1 220px;max-width:420px;accent-color:var(--in-edge)}
+.big2{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.5rem}
+/* NAPT */
+.napt{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;margin:10px 0}
+.napt .nd{border:1px solid var(--line);border-radius:10px;padding:8px 10px;text-align:center;background:var(--paper)}
+.napt .nd b{display:block}
+.napt .nd.on{border:2px solid var(--sig);box-shadow:0 0 0 3px var(--glow)}
+.napt .ar{font-size:1.3rem;color:var(--muted)}
+.pk{font-family:"BIZ UDGothic",monospace;font-size:.85rem;border:1px dashed var(--line);border-radius:8px;padding:6px 8px;margin-top:6px;text-align:left}
+@media (max-width:700px){.napt{grid-template-columns:1fr}.napt .ar{transform:rotate(90deg);justify-self:center}}
+/* アドレスの数直線（ブロック） */
+.blocks{display:flex;gap:3px;margin:4px 0}
+.blocks .bk{flex:1 1 0;min-width:0;border:1px solid var(--line);border-radius:6px;padding:6px 2px;text-align:center;font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:.85rem;background:var(--paper);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.blocks .bk small{display:block;font-weight:400;color:var(--muted);font-size:.75rem}
+.blocks .bk.hit{background:var(--out);border-color:var(--out-edge)}
+.blocks .bk.alt{background:var(--in);border-color:var(--in-edge)}
+.blkrow{display:grid;grid-template-columns:3.6em minmax(0,1fr);gap:8px;align-items:center}
+.blkrow .pl{font-family:"BIZ UDGothic",monospace;font-weight:700}
+.v6{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:1.05rem;word-break:break-all;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+.v6 .z{color:var(--ng)}
+.figbox{border:1px solid var(--line);border-radius:12px;padding:10px;margin:10px 0}
+.netsvg .dev{fill:var(--paper);stroke:var(--ink);stroke-width:2}
+.netsvg .rt{fill:var(--out);stroke:var(--out-edge);stroke-width:2}
+.netsvg .hb{fill:var(--in);stroke:var(--in-edge);stroke-width:2}
+.netsvg .cl{fill:color-mix(in srgb,var(--line) 30%,transparent);stroke:var(--wire);stroke-width:1.6;stroke-dasharray:6 4}
+.netsvg .ln{stroke:var(--wire);stroke-width:2.4;fill:none}
+.netsvg .area{fill:none;stroke:var(--line);stroke-width:2;stroke-dasharray:7 5}
+.netsvg .t{font-size:14px}
+.netsvg .ts{font-size:12px}
+.netsvg .tm{fill:var(--ink);font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:13px}
+/* ===== IPアドレスのしくみ(2)で追加した部品 ===== */
+/* 確認ドリル */
+.drillbox{border:2px solid var(--in-edge);border-radius:12px;padding:12px 14px;margin:10px 0;text-align:center;background:color-mix(in srgb,var(--in) 35%,transparent)}
+.dprog{font-weight:700;color:var(--muted);font-size:.9rem}
+.drillq{font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:clamp(1.5rem,6vw,2.2rem);letter-spacing:.03em;margin:2px 0 4px}
+/* 表の中で選ばれている行 */
+.tbl tr.hitr td{background:color-mix(in srgb,var(--sig) 24%,transparent);font-weight:700}
+.ok-t{color:var(--ok);font-weight:700}.ng-t{color:var(--ng);font-weight:700}
+/* 通信テストの結果 */
+.verdict.ngv{border-color:var(--ng);color:var(--ng)}
+.verdict.warn{border-color:var(--sig);color:color-mix(in srgb,var(--sig) 55%,var(--ink))}
+.verdict .mk2{display:inline-block;min-width:1.6em;font-size:1.2rem}
+.verdict .vexp{margin:6px 0 0;color:var(--ink);font-weight:400;font-size:.95rem}
+/* 図の強調 */
+.netsvg .dev.sel{stroke:var(--sig);stroke-width:3.5}
+.netsvg .ln.on{stroke:var(--sig);stroke-width:4}
+.netsvg .tp{fill:var(--in-edge);font-size:12px;font-weight:700}
+/* 発展A：アドレスの割り当て図 */
+.vbar{position:relative;height:70px;border:1px solid var(--line);border-radius:8px;margin:8px 0 2px;
+  background:repeating-linear-gradient(90deg,transparent 0 calc(25% - 1px),var(--line) calc(25% - 1px) 25%),var(--paper)}
+.vseg{position:absolute;top:6px;bottom:6px;border-radius:6px;border:2px solid;display:flex;flex-direction:column;justify-content:center;align-items:center;
+  overflow:hidden;white-space:nowrap;line-height:1.25;font-weight:700;font-size:.8rem;padding:0 2px}
+.vseg small{font-family:"BIZ UDGothic",monospace;font-weight:400;font-size:.7rem}
+.vseg.c0{background:var(--in);border-color:var(--in-edge)}
+.vseg.c1{background:var(--out);border-color:var(--out-edge)}
+.vseg.c2{background:color-mix(in srgb,var(--sig) 28%,var(--paper));border-color:var(--sig)}
+.vseg.c3{background:color-mix(in srgb,var(--wire) 22%,var(--paper));border-color:var(--wire)}
+.vseg.bad{border-style:dashed;border-color:var(--ng);border-width:3px}
+.vticks{position:relative;height:1.3em;font-family:"BIZ UDGothic",monospace;font-size:.75rem;color:var(--muted)}
+.vticks span{position:absolute;transform:translateX(-50%)}
+.vticks span:first-child{transform:none}.vticks span:last-child{transform:translateX(-100%)}
+.vwarn{border-left:4px solid var(--ng);padding:6px 10px;margin:8px 0;background:color-mix(in srgb,var(--ng) 7%,transparent);font-size:.9rem}
+.vwarn p{margin:.15em 0}
+.e1t th:not(.m),.e1t td:not(.m){width:auto;min-width:0;padding:6px 10px}
+/* 発展B：IPv6のプレフィックス */
+.v6b{font-size:clamp(.95rem,3.6vw,1.3rem);text-align:center;letter-spacing:.02em}
+.v6b .np{background:var(--in);border-bottom:3px solid var(--in-edge)}
+.v6b .hp{background:var(--out);border-bottom:3px solid var(--out-edge)}
+.tbl.nw th,.tbl.nw td{white-space:nowrap}
+.qrow.qw{grid-template-columns:minmax(0,1fr) 1.8em}
+.qrow.qw .qa{grid-column:1;justify-content:flex-start}
+.qrow.qw .mk{grid-column:2;grid-row:1 / 3;align-self:center}
+.qrow.qw select.tsel{max-width:100%;white-space:normal}
+/* 「・」の箇条書き */
+.kl{margin:2px 0 0;padding:0;list-style:none}
+.kl li{padding-left:1em;text-indent:-1em;margin:.15em 0}
+.kl li::before{content:"・"}
+.tbl td.nowrap{white-space:nowrap}
+/* 問題文の補足 */
+.qnote{display:block;font-size:.82rem;color:var(--muted);font-weight:400;margin-top:2px}
+/* 通信テストの説明：3行分の高さで固定 */
+/* 12通りの説明を同じ場所に重ね、いちばん長い説明の高さに枠をそろえる（パソコンでは3行） */
+.vstack{display:grid}
+.vstack .vexp{grid-area:1/1;line-height:1.75}
+.vstack .vexp.vhide{visibility:hidden}
+</style>
+</head>
+<body class="is-top">
+<section id="top" aria-label="トップ"><div class="top-in"><div><p class="top-sub">IPアドレスのしくみ　応用・発展編</p><h1 class="top-ttl">IPアドレスのしくみ(2)</h1><p class="top-lead">「IPアドレスのしくみ」で学んだことを確かめ、<br class="pc-br">ネットワークのトラブル解決や設計に使ってみよう。</p><button type="button" class="btn primary start" data-act="start">はじめる</button></div></div></section>
+<header class="wrap">
+  <div class="brand"><h1 id="apptitle" title="トップ画面へ" style="cursor:pointer">IPアドレスのしくみ(2)</h1></div>
+  <nav class="rail" id="rail" aria-label="ステップ"></nav>
+</header>
+<main class="wrap"><div class="sheet" id="main"></div></main>
+<div class="wrap foot"><button class="linkbtn" id="reset" type="button">記録を消して最初からやり直す</button></div>
+<div class="cleartoast" id="cleartoast" role="status" aria-live="polite"><span class="ct-txt">クリア！</span></div>
+<div class="bar"><div class="wrap">
+  <button class="btn" id="back" type="button">もどる</button>
+  <span class="status" id="status" aria-live="polite"></span>
+  <span id="nexts" style="display:flex;gap:8px;flex-wrap:nowrap;flex:0 0 auto"></span>
+</div></div>
+
+<script>
+/* ============ 状態の保存 ============ */
+const KEY = 'ip-address-2-app-v1';
+const APP_ID = 'ip-address-2';
+const b4 = () => ['','','',''];
+const bl = n => Array(n).fill('');
+function initState(){
+  return {
+    app:APP_ID, cur:0,
+    intro:bl(5),
+    s1:{p:[192,168,10,75,27], mask:b4(), na:b4(), ba:b4(), cnt:'', done:0, counted:false, hint:0},
+    s2:{demo:'50', q:bl(7), why:''},
+    s3:{demo:['169','254','35','12'], q:bl(5)},
+    s4:{who:0, to:0, c:bl(6), q1:'', q2:'', mask:b4()},
+    s5:{demo:['10','1','20','5'], q:bl(5), why:''},
+    s6:{p:[192,168,40,0,24,4,3], bits:'', pre:'', mask:b4(), cnt:'', na:b4(), ba:b4(), done:0, counted:false, hint:0},
+    e1:{pre:bl(4), na:bl(4), ba:bl(4), rest:'', cnt:''},
+    e2:{n:64, q:bl(6)},
+    ref:{good:'',hard:''}, log:{}, lastAt:'', saveId:'', unsaved:false, savedAt:''
+  };
+}
+function merge(def, src){
+  if (src === undefined || src === null) return def;
+  if (Array.isArray(def)) return Array.isArray(src) && src.length === def.length ? src.map((v,i)=>merge(def[i],v)) : def;
+  if (typeof def === 'object' && def !== null){
+    if (typeof src !== 'object' || Array.isArray(src)) return def;
+    if (Object.keys(def).length===0) return src;
+    const o = {}; for (const k in def) o[k] = merge(def[k], src[k]); return o;
+  }
+  return typeof src === typeof def || def === null ? src : def;
+}
+let S = initState();
+function migrateRaw(t){return t;}
+try { const raw = localStorage.getItem(KEY); if (raw) S = merge(initState(), JSON.parse(migrateRaw(raw))); } catch(e) {}
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} }
+let unlockAll = false;
+
+/* ============ 数の判定とアドレスの計算 ============ */
+/* 全角数字・全角ピリオドを半角にして前後の空白をとる */
+const norm = v => String(v==null?'':v).replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/．/g,'.').replace(/\s+/g,'').trim();
+const toN = v => { const t=norm(v); return /^\d{1,7}$/.test(t) ? parseInt(t,10) : NaN; };
+const filled = v => norm(v)!=='';
+const ipFilled = a => a.every(filled);
+const ipEq = (a,t) => a.every((v,i)=>toN(v)===t[i]);
+const ipVals = a => a.map(toN);
+const ipValid = a => a.length===4 && a.every(v=>{const n=toN(v);return n>=0&&n<=255;});
+const P2 = n => Math.pow(2,n);
+const ip2n = a => a[0]*16777216 + a[1]*65536 + a[2]*256 + a[3];
+const n2ip = x => [Math.floor(x/16777216)%256, Math.floor(x/65536)%256, Math.floor(x/256)%256, x%256];
+const maskOf = n => n2ip(P2(32)-P2(32-n));
+const netOf = (a,n) => n2ip(Math.floor(ip2n(a)/P2(32-n))*P2(32-n));
+const bcOf = (a,n) => n2ip(Math.floor(ip2n(a)/P2(32-n))*P2(32-n)+P2(32-n)-1);
+const hosts = n => P2(32-n)-2;
+const ipStr = a => a.join('.');
+const bin8 = v => (v>>>0).toString(2).padStart(8,'0');
+const fmt = n => n.toLocaleString('ja-JP');
+const isPrivate = a => a[0]===10 || (a[0]===172 && a[1]>=16 && a[1]<=31) || (a[0]===192 && a[1]===168);
+const escapeHtml = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ============ 入力部品 ============ */
+function getPath(p){return p.split('.').reduce((o,k)=>o[k],S);}
+function setPath(p,v){const ks=p.split('.');const last=ks.pop();const o=ks.reduce((o,k)=>o[k],S);o[last]=v;}
+const fid = p => 'f-'+p.replace(/\./g,'-');
+let hideMarks=false;
+const mark=(f,ok)=>hideMarks?'':!f?'<span class="mk"></span>':ok?'<span class="mk ok" aria-label="正解">○</span>':'<span class="mk ng" aria-label="不正解">×</span>';
+/* 数を入れるマス。cls：oct（0〜255）／num（数）／bin（2進数）。demo：観察用（操作回数に数えない） */
+function txt(path,label,cls,demo){
+  const v=getPath(path);
+  const im = cls==='bin' ? 'numeric' : 'numeric';
+  const ph = cls==='bin' ? '8けた' : '？';
+  const ml = cls==='oct' ? 3 : cls==='bin' ? 9 : 7;
+  return `<input class="txt ${cls}${demo?' demo':''}" id="${fid(path)}" data-act="text" data-path="${path}"${demo?' data-nocount="1"':''} inputmode="${im}" autocomplete="off" maxlength="${ml}" placeholder="${ph}" value="${escapeHtml(v)}" aria-label="${label}">`;
+}
+/* IPアドレスを入れる4つのマス（「.」キーで次のマスへ） */
+const ipIn=(path,label,demo)=>`<span class="ipin" role="group" aria-label="${label}">${[0,1,2,3].map(i=>txt(`${path}.${i}`,`${label}の${i+1}つ目の数`,'oct',demo)).join('<span class="dt">.</span>')}</span>`;
+/* 最後の数だけを入れる（前は固定） */
+const lastIn=(prefix,path,label)=>`<span class="ipin"><span class="fx">${prefix}</span>${txt(path,label,'oct')}</span>`;
+/* 選択肢から選ぶ（未選択は「？」） */
+function pick(path,opts,label){
+  const v=getPath(path);
+  /* 一覧の先頭は空白の行。未選択のときだけ、上に「？（選ぶ）」を重ねて表示する */
+  return `<span class="tselw${v===''?' blank':''}"><select class="tsel" id="${fid(path)}" data-act="sel" data-path="${path}" aria-label="${label}"><option value=""${v===''?' selected':''}>&nbsp;</option>${opts.map(o=>`<option value="${escapeHtml(o)}"${v===o?' selected':''}>${escapeHtml(o)}</option>`).join('')}</select></span>`;
+}
+const tog=(path,v,label)=>`<button type="button" class="box in" data-act="tog" data-path="${path}" aria-label="${label}（いまは${v}）。押すと切り替わる">${v}</button>`;
+const val=v=>v===null||v===undefined||v===''?'？':v;
+const cyc=(path,v,label)=>`<button type="button" class="box in cyc${v===null?' blank':''}" id="${fid(path)}" data-act="cyc" data-path="${path}" aria-label="${label}（${v===null?'未入力':v}）">${val(v)}</button>`;
+const outBox=(v,label)=>`<div class="box out" role="img" aria-label="${label}は${v}">${v}</div>`;
+/* 切り替えボタン（数値） */
+const segSel=(path,opts,label,fmtf)=>{const v=getPath(path);return `<span class="segsel" role="group" aria-label="${label}">${opts.map(o=>`<button type="button" data-act="set" data-path="${path}" data-val="${o}" aria-pressed="${v===o}">${fmtf?fmtf(o):o}</button>`).join('')}</span>`;};
+/* 問題の1行 */
+const qrow=(no,q,ans,f,ok)=>`<div class="qrow"><div>${no?`<span class="qn">${no}</span>`:''}${q}</div><div class="qa">${ans}</div>${mark(f,ok)||'<span></span>'}</div>`;
+const it=(a,ok)=>({a:!!a,ok:!!ok});
+
+/* 32ビットの帯：octs＝4つの数、n＝プレフィックス長（色分け）、opt.lab＝左の見出し、opt.bits＝0/1の配列で直接指定 */
+function strip(octs,n,opt={}){
+  const bits = opt.bits || octs.map(bin8).join('').split('');
+  let h=`<div class="bline${opt.op?' op':''}">${opt.lab!==undefined?`<div class="blab">${opt.lab}</div>`:''}<div class="bstrip">`;
+  for(let g=0;g<4;g++){
+    if(g>0) h+=`<span class="bdot">.</span>`;
+    h+=`<div class="bgrp"><div class="cells">`;
+    for(let j=0;j<8;j++){ const k=g*8+j; const c = n==null?'':(k<n?' net':' host'); h+=`<span class="bc${c}">${bits[k]}</span>`; }
+    h+=`</div><div class="bdec">${opt.dec===false?'':(opt.decs?opt.decs[g]:parseInt(bits.slice(g*8,g*8+8).join(''),2))}</div></div>`;
+  }
+  return h+`</div></div>`;
+}
+const legendNH=`<div class="legend"><span><span class="swatch" style="background:var(--in)"></span>ネットワーク部</span><span><span class="swatch" style="background:var(--out)"></span>ホスト部</span></div>`;
+const scrollWrap=h=>`<p class="hint-sc">左右にスクロールできます</p><div class="scroll">${h}</div>`;
+
+/* ============ 図 ============ */
+/* Step4：トラブルのあるLANの図（sel＝選んでいる機器の番号） */
+function troubleFig(sel,to){
+  const W=760,H=300, xs=[60,166,272,378,484,590,700];
+  let s='';
+  s+=`<rect class="cl" x="290" y="6" width="180" height="40" rx="20"/><text class="t" x="380" y="31" text-anchor="middle" style="fill:var(--ink)">インターネット</text>`;
+  s+=`<line class="ln${to===1?' on':''}" x1="380" y1="46" x2="380" y2="80"/>`;
+  s+=`<rect class="rt" x="320" y="80" width="120" height="40" rx="8"/><text class="t" x="380" y="105" text-anchor="middle" style="fill:var(--ink)">ルータ</text>`;
+  s+=`<text class="tm" x="450" y="105">192.168.10.254</text>`;
+  s+=`<line class="ln" x1="380" y1="120" x2="380" y2="146"/>`;
+  s+=`<rect class="hb" x="330" y="146" width="100" height="34" rx="6"/><text class="t" x="380" y="168" text-anchor="middle" style="fill:var(--ink)">ハブ</text>`;
+  s+=`<path class="ln" d="M380,180 V198 M${xs[0]},198 H${xs[6]}"/>`;
+  xs.forEach((x,i)=>{
+    const nm=i<6?'パソコン'+'ABCDEF'[i]:'プリンタ', on=i===sel||(i===6&&to===0);
+    s+=`<line class="ln${on?' on':''}" x1="${x}" y1="198" x2="${x}" y2="222"/>`;
+    s+=`<rect class="dev${on?' sel':''}" x="${x-48}" y="222" width="96" height="36" rx="6"/><text class="t" x="${x}" y="245" text-anchor="middle" style="fill:var(--ink);font-size:13px">${nm}</text>`;
+    s+=`<text class="tm" x="${x}" y="280" text-anchor="middle" style="font-size:11px">${i<6?PCS[i][1]:PRN[1]}</text>`;
+  });
+  return scrollWrap(`<div class="figbox" style="min-width:640px"><svg class="netsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="ルータとハブにパソコンA〜Fとプリンタがつながった、192.168.10.0/24 のLANの図" style="width:100%;height:auto;display:block">${s}</svg></div>`);
+}
+/* Step5：経路表をもつルータの図（hit＝送り出すポートの番号、0〜4） */
+function routeFig(hit){
+  const W=760,H=300;
+  const on=k=>hit===k?' on':'';
+  let s='';
+  s+=`<rect class="cl" x="290" y="6" width="180" height="40" rx="20"/><text class="t" x="380" y="31" text-anchor="middle" style="fill:var(--ink)">インターネット</text>`;
+  s+=`<line class="ln${on(4)}" x1="380" y1="46" x2="380" y2="128"/><text class="tp" x="390" y="92">ポート5</text>`;
+  s+=`<rect class="rt" x="320" y="128" width="120" height="46" rx="8"/><text class="t" x="380" y="156" text-anchor="middle" style="fill:var(--ink)">ルータ</text>`;
+  const box=(x,y,t1,t2)=>`<rect class="dev" x="${x}" y="${y}" width="200" height="52" rx="8"/><text class="t" x="${x+100}" y="${y+22}" text-anchor="middle" style="fill:var(--ink);font-size:13px">${t1}</text><text class="tm" x="${x+100}" y="${y+42}" text-anchor="middle">${t2}</text>`;
+  s+=`<path class="ln${on(0)}" d="M320,140 H270 V96 H230"/><text class="tp" x="244" y="88">ポート1</text>`+box(30,70,'ネットワークA','192.168.1.0/24');
+  s+=`<path class="ln${on(1)}" d="M320,162 H270 V226 H230"/><text class="tp" x="244" y="250">ポート2</text>`+box(30,200,'ネットワークB','192.168.2.0/24');
+  s+=`<path class="ln${on(2)}" d="M440,140 H490 V96 H530"/><text class="tp" x="472" y="88">ポート3</text>`+box(530,70,'ルータXの先のネットワーク','10.0.0.0/8');
+  s+=`<path class="ln${on(3)}" d="M440,162 H490 V226 H530"/><text class="tp" x="472" y="250">ポート4</text>`+box(530,200,'ルータYの先のネットワーク','10.1.0.0/16');
+  return scrollWrap(`<div class="figbox" style="min-width:640px"><svg class="netsvg" viewBox="0 0 ${W} ${H}" role="img" aria-label="ポート1〜5をもつルータと、それぞれのポートの先にあるネットワークの図" style="width:100%;height:auto;display:block">${s}</svg></div>`);
+}
+
+/* ============ 各ステップの正解データ ============ */
+const SAME=['同じネットワーク','別のネットワーク'];
+const INTRO_Q=[
+  ['<span class="mono">/27</span> のサブネットマスクは',['255.255.255.192','255.255.255.224','255.255.255.240','255.255.224.0'],'255.255.255.224'],
+  ['ネットワークアドレスを求めるときに、IPアドレスとサブネットマスクで行う演算は',['AND演算','OR演算','NOT演算'],'AND演算'],
+  ['<span class="mono">192.168.1.77/26</span> のネットワークアドレスは',['192.168.1.0','192.168.1.64','192.168.1.77','192.168.1.127'],'192.168.1.64'],
+  ['<span class="mono">/28</span> のネットワークに接続できる台数は',['14台','16台','28台','30台'],'14台'],
+  ['<span class="mono">10.0.5.9/16</span> と <span class="mono">10.0.200.1/16</span> は',SAME,SAME[0]]
+];
+/* Step1：確認ドリル（ランダム出題） */
+const DRILL_N=[24,25,26,27,28,29,30,24,25,26,27,28,16,20,22,23];
+function genDrill(prev){
+  const r=x=>Math.floor(Math.random()*x);
+  let a,n,k=0;
+  do{
+    n=DRILL_N[r(DRILL_N.length)]; const t=r(10);
+    a = t<6?[192,168,r(256),r(256)] : t<8?[172,16+r(16),r(256),r(256)] : [10,r(256),r(256),r(256)];
+    k++;
+  }while(k<50&&(ipStr(a)===ipStr(netOf(a,n))||ipStr(a)===ipStr(bcOf(a,n))||(prev&&prev[4]===n)));
+  return [...a,n];
+}
+const drillP=()=>({a:S.s1.p.slice(0,4), n:S.s1.p[4]});
+function drillOk(){ const {a,n}=drillP(), st=S.s1;
+  return [ipEq(st.mask,maskOf(n)), ipEq(st.na,netOf(a,n)), ipEq(st.ba,bcOf(a,n)), toN(st.cnt)===hosts(n)]; }
+const drillAny=()=>ipFilled(S.s1.mask)||ipFilled(S.s1.na)||ipFilled(S.s1.ba)||filled(S.s1.cnt)||S.s1.mask.some(filled)||S.s1.na.some(filled)||S.s1.ba.some(filled);
+const drillSolved=()=>drillOk().every(x=>x);
+const DRILL_GOAL=3;
+/* Step2：必要な台数からネットワークの大きさを決める */
+const needPre=c=>{ for(let h=2;h<=24;h++) if(P2(h)-2>=c) return 32-h; return null; };
+const S2Q=[['50台',50],['30台',30],['31台',31],['120台',120],['200台',200],['300台',300],['ルータ2台だけ（ルータどうしをつなぐ）',2]];
+const WHY2=['/27はアドレスが32個あるが、そのうち2個は機器に割り当てられないので、30台までしかつなげないから','/27は27台までしかつなげないから','/27はプライベートIPアドレスに使えないから'];
+/* Step3：特別なIPアドレス */
+function classify(a){
+  if(a.every(v=>v===0)) return ['0.0.0.0','「まだIPアドレスがない」ことを表す特別なアドレス。経路表では「すべての宛先」を表す（Step5）'];
+  if(a.every(v=>v===255)) return ['ブロードキャストアドレス','自分がいるネットワークのすべての機器にまとめて送るためのアドレス'];
+  if(a[0]===127) return ['ループバックアドレス','自分自身を表すアドレス（127.0.0.0〜127.255.255.255）'];
+  if(a[0]===169&&a[1]===254) return ['リンクローカルアドレス','DHCPサーバからIPアドレスを受け取れなかったときなどに、機器が自分で付けるアドレス。同じLANの中でしか使えない'];
+  if(a[0]===0) return ['特別な用途のアドレス','0で始まるアドレスは、機器には割り当てない'];
+  if(a[0]>=224&&a[0]<=239) return ['マルチキャストアドレス','特定のグループに入っている機器にまとめて送るためのアドレス'];
+  if(a[0]>=240) return ['予約されたアドレス','将来のためにとっておかれていて、ふつうは使わない'];
+  if(isPrivate(a)) return ['プライベートIPアドレス','LANの中で自由に割り当ててよいアドレス'];
+  if(a[0]===100&&a[1]>=64&&a[1]<=127) return ['共有アドレス','プロバイダの中だけで使うアドレス（100.64.0.0〜100.127.255.255）'];
+  return ['グローバルIPアドレス','インターネット上で、世界に1つだけのアドレスとして使われる'];
+}
+const S3Q=[
+  ['<span class="mono">127.0.0.1</span> に ping を送ると、返事をするのは<span class="qnote">※ ping（ピング）：相手に確認用の小さなパケットを送り、返事が返ってくるかどうかで、通信できるかを調べるコマンド</span>',['自分自身のコンピュータ','デフォルトゲートウェイ（ルータ）','同じLANのすべての機器','インターネット上のサーバ'],'自分自身のコンピュータ'],
+  ['パソコンのIPアドレスを調べたら <span class="mono">169.254.35.12</span> になっていた。考えられる原因は',['DHCPサーバからIPアドレスを受け取れなかった','グローバルIPアドレスが割り当てられた','NAPTでアドレスが変換された','サブネットマスクが /16 になった'],'DHCPサーバからIPアドレスを受け取れなかった'],
+  ['IPアドレスがまだ決まっていないパソコンが、DHCPサーバを探すために送るパケットの宛先は',['255.255.255.255','127.0.0.1','0.0.0.0','192.168.1.0'],'255.255.255.255'],
+  ['<span class="mono">192.168.1.0/24</span> のネットワークで、パソコンに割り当ててよいアドレスは',['192.168.1.0','192.168.1.255','192.168.1.254','127.0.0.1'],'192.168.1.254'],
+  ['インターネット上で、世界に1つだけのアドレスとして使われるのは',['8.8.8.8','10.8.8.8','169.254.8.8','127.8.8.8'],'8.8.8.8']
+];
+/* Step4：つながらない原因をさがそう */
+const PCS=[
+  ['パソコンA','192.168.10.1','255.255.255.0','192.168.10.254',0],
+  ['パソコンB','192.168.10.2','255.255.255.0','192.168.10.1',5],
+  ['パソコンC','192.168.11.3','255.255.255.0','192.168.10.254',1],
+  ['パソコンD','192.168.10.1','255.255.255.0','192.168.10.254',2],
+  ['パソコンE','192.168.10.255','255.255.255.0','192.168.10.254',3],
+  ['パソコンF','192.168.10.6','255.255.255.192','192.168.10.254',4]
+];
+const PRN=['プリンタ','192.168.10.100','255.255.255.0','192.168.10.254'];
+const CAUSES=['正しく設定されている','IPアドレスが別のネットワークになっている','IPアドレスがほかの機器と重複している','機器に割り当てられないアドレスになっている','サブネットマスクがまちがっている','デフォルトゲートウェイがまちがっている'];
+const TARGETS=['同じLANのプリンタ','インターネット'];
+/* 通信テストの結果：[○・×・△, 説明] */
+const R4=[
+  [['○','パソコンAのネットワークアドレスは 192.168.10.0、プリンタも 192.168.10.0。同じネットワークなので、ハブを通して直接届く。'],
+   ['○','インターネットは別のネットワークなので、デフォルトゲートウェイ（ルータ 192.168.10.254）に渡す。ルータがNAPTで変換してインターネットへ送る。']],
+  [['○','プリンタは同じネットワーク（192.168.10.0）なので、直接届く。デフォルトゲートウェイは<b>ほかのネットワークへ出るときだけ</b>使うので、LANの中の通信には影響しない。'],
+   ['×','ほかのネットワークあてのパケットを、デフォルトゲートウェイの 192.168.10.1 に渡す。しかし 192.168.10.1 はパソコンAでルータではないので、インターネットへは届かない。']],
+  [['×','パソコンCのネットワークアドレスは 192.168.<b>11</b>.0。プリンタ（192.168.10.0）は別のネットワークだと判断して、デフォルトゲートウェイに渡そうとする。しかし 192.168.10.254 も自分のネットワークの外にあるので、渡すことができない。'],
+   ['×','デフォルトゲートウェイ 192.168.10.254 が、自分のネットワーク（192.168.11.0/24）の外にあるので、ルータに渡すことができない。']],
+  [['△','パソコンAと同じ 192.168.10.1 を使っている。送ることはできても、返事がパソコンAとパソコンDのどちらに届くかわからず、通信が不安定になる。OSが「IPアドレスが重複しています」と警告することもある。'],
+   ['△','インターネットからの返事も、パソコンAとパソコンDのどちらに届くかわからない。2台とも通信が不安定になる。']],
+  [['×','192.168.10.255 は、このネットワークのブロードキャストアドレス（ホスト部がすべて1）。Windowsなどでは設定しようとするとエラーになり、設定できない。'],
+   ['×','ブロードキャストアドレスは機器に割り当てられないので、インターネットとも通信できない。']],
+  [['×','サブネットマスクが 255.255.255.192（/26）なので、パソコンFは自分のネットワークを 192.168.10.0〜192.168.10.63 だと考える。プリンタ（.100）は範囲外なので別のネットワークと判断し、デフォルトゲートウェイに渡そうとするが、192.168.10.254 も範囲外なので渡せない（.0〜.63 の範囲にあるパソコンAとは通信できる）。'],
+   ['×','デフォルトゲートウェイ 192.168.10.254 が、パソコンFが考える自分のネットワーク（192.168.10.0〜192.168.10.63）の外にあるので、ルータに渡すことができない。']]
+];
+const S4Q1=['できる','できない'];
+const S4Q2=['192.168.10.0','192.168.10.1','192.168.10.50','192.168.10.254'];
+/* Step5：ルータの経路表 */
+const ROUTES=[[[192,168,1,0],24,'ポート1'],[[192,168,2,0],24,'ポート2'],[[10,0,0,0],8,'ポート3'],[[10,1,0,0],16,'ポート4'],[[0,0,0,0],0,'ポート5（インターネット）']];
+const PORTS=ROUTES.map(r=>r[2]);
+const routeMatch=a=>ROUTES.map(([net,n])=>ipStr(netOf(a,n))===ipStr(net));
+function routeOf(a){ let best=-1; routeMatch(a).forEach((m,i)=>{ if(m&&(best<0||ROUTES[i][1]>ROUTES[best][1])) best=i; }); return best; }
+const S5D=[[192,168,2,30],[10,20,30,40],[10,1,200,3],[203,0,113,80],[192,168,3,1]];
+const WHY5=['一致する行のうち、プレフィックス長がいちばん長い行を選ぶから','経路表の下にある行ほど優先されるから','第2オクテットが1だから'];
+/* Step6：サブネット化の演習（ランダム出題）。p＝[ネットワークアドレス4つ, プレフィックス長, 分ける数, 何番目] */
+function genSub(prev){
+  const r=x=>Math.floor(Math.random()*x);
+  let p,k=0;
+  do{
+    const t=r(10); let base,n;
+    if(t<6){ n=24; base=[192,168,r(256),0]; }
+    else if(t<8){ n=[23,22][r(2)]; const s=P2(24-n); base=[192,168,r(256/s)*s,0]; }
+    else { n=16; base=t<9?[172,16+r(16),0,0]:[10,r(256),0,0]; }
+    const kk=[2,4,8,16][r(n===24?4:3)], m=1+r(kk);
+    p=[...base,n,kk,m]; k++;
+  }while(k<50&&prev&&prev[5]===p[5]&&prev[4]===p[4]);
+  return p;
+}
+const subP=()=>{ const q=S.s6.p, base=q.slice(0,4), n=q[4], k=q[5], m=q[6], bits=Math.log2(k), pre=n+bits, size=P2(32-pre);
+  const na=n2ip(ip2n(base)+(m-1)*size); return {base,n,k,m,bits,pre,size,na,ba:bcOf(na,pre)}; };
+function subOk(){ const P=subP(), st=S.s6;
+  return [toN(st.bits)===P.bits, toN(st.pre)===P.pre, ipEq(st.mask,maskOf(P.pre)), toN(st.cnt)===hosts(P.pre), ipEq(st.na,P.na), ipEq(st.ba,P.ba)]; }
+const subAny=()=>[S.s6.bits,S.s6.pre,S.s6.cnt].some(filled)||[S.s6.mask,S.s6.na,S.s6.ba].some(a=>a.some(filled));
+const subSolved=()=>subOk().every(x=>x);
+/* 発展A：台数に合わせてサブネットを設計しよう */
+const ROOMS=[['職員室',100],['PC教室',50],['図書室',20],['事務室',10]];
+const E1ANS={pre:[25,26,27,28], na:[0,128,192,224], ba:[127,191,223,239], rest:240, cnt:14};
+/* 発展B：IPv6のネットワーク */
+const V6EX='2001:0db8:0001:0002:0a8b:12ff:fe34:5678';
+const E2Q=[
+  {q:'<span class="mono">2001:db8:1:2::10/64</span> のプレフィックス（ネットワーク部）は',o:['2001:db8:1:2::/64','2001:db8::/64','2001:db8:1::/64','::10/64'],a:'2001:db8:1:2::/64'},
+  {q:'<span class="mono">2001:db8:1:2::10/64</span> と <span class="mono">2001:db8:1:3::20/64</span> は',o:SAME,a:SAME[1]},
+  {q:'<span class="mono">2001:db8:1:2::10/64</span> と <span class="mono">2001:db8:1:2:abcd::5/64</span> は',o:SAME,a:SAME[0]},
+  {q:'<span class="mono">/64</span> のネットワークで、インタフェースIDに使えるビット数は',o:['16ビット','32ビット','64ビット','128ビット'],a:'64ビット'},
+  {q:'IPv4の <span class="mono">127.0.0.1</span>（ループバックアドレス）にあたるIPv6のアドレスは',o:['::1','fe80::1','ff02::1','2001:db8::1'],a:'::1'},
+  {q:'IPv4にはあるが、IPv6には<b>ない</b>ものは',o:['ブロードキャストアドレス','ループバックアドレス','リンクローカルアドレス','プレフィックス'],a:'ブロードキャストアドレス'}
+];
+
+/* ============ ダッシュボード用：各ページの問題（項目） ============ */
+const DASH_ITEMS={
+  intro:()=>INTRO_Q.map((q,i)=>it(S.intro[i]!=='',S.intro[i]===q[2])),
+  s1:()=>[0,1,2].map(k=>it(S.s1.done>k||(S.s1.done===k&&drillAny()),S.s1.done>k)),
+  s2:()=>S2Q.map((q,i)=>it(filled(S.s2.q[i]),toN(S.s2.q[i])===needPre(q[1]))).concat([it(S.s2.why!=='',S.s2.why===WHY2[0])]),
+  s3:()=>S3Q.map((q,i)=>it(S.s3.q[i]!=='',S.s3.q[i]===q[2])),
+  s4:()=>PCS.map((p,i)=>it(S.s4.c[i]!=='',S.s4.c[i]===CAUSES[p[4]]))
+        .concat([it(S.s4.q1!=='',S.s4.q1===S4Q1[0]),it(S.s4.q2!=='',S.s4.q2===S4Q2[2]),it(ipFilled(S.s4.mask),ipEq(S.s4.mask,[255,255,255,0]))]),
+  s5:()=>S5D.map((d,i)=>it(S.s5.q[i]!=='',S.s5.q[i]===PORTS[routeOf(d)])).concat([it(S.s5.why!=='',S.s5.why===WHY5[0])]),
+  e1:()=>[0,1,2,3].flatMap(i=>[it(filled(S.e1.pre[i]),toN(S.e1.pre[i])===E1ANS.pre[i]),it(filled(S.e1.na[i]),toN(S.e1.na[i])===E1ANS.na[i]),it(filled(S.e1.ba[i]),toN(S.e1.ba[i])===E1ANS.ba[i])])
+        .concat([it(filled(S.e1.rest),toN(S.e1.rest)===E1ANS.rest),it(filled(S.e1.cnt),toN(S.e1.cnt)===E1ANS.cnt)]),
+  s6:()=>[0,1,2].map(k=>it(S.s6.done>k||(S.s6.done===k&&subAny()),S.s6.done>k)),
+  e2:()=>E2Q.map((q,i)=>it(S.e2.q[i]!=='',S.e2.q[i]===q.a))
+};
+function dashStatus(id){ const I=DASH_ITEMS[id](), n=I.length, ok=I.filter(x=>x.ok).length, a=I.filter(x=>x.a).length;
+  return {n,ok,a,st: ok===n?'clear':(a===0?'none':'wip')}; }
+const DST_LABEL={clear:'クリア',wip:'取り組み中',none:'未回答'};
+const nowStr=()=>{const d=new Date(),z=n=>String(n).padStart(2,'0');return `${d.getMonth()+1}/${d.getDate()} ${z(d.getHours())}:${z(d.getMinutes())}`;};
+const dayOf=t=>t?t.split(' ')[0]:'';
+/* 少ない操作でクリアしたかの目安：1問あたり2回まで（ビットを並べる問題は1マス1回として数える） */
+function opsLimit(id){ const n=DASH_ITEMS[id]().length; return id==='s1'?3*13*2:id==='s6'?3*16*2:id==='s4'?n*2+24:id==='e1'||id==='s2'?n*2*3:n*2; }
+function countOp(){
+  const sc=screens[S.cur]; if(!sc||!DASH_ITEMS[sc.id]) return;
+  const L=S.log[sc.id]||(S.log[sc.id]={}); S.lastAt=nowStr(); if(S.saveId) S.unsaved=true;
+  if(sc.cleared()) return;
+  L.ops=(L.ops||0)+1; if(!L.s) L.s=nowStr();
+}
+function recordClear(id){ if(!DASH_ITEMS[id]) return; const L=S.log[id]||(S.log[id]={}); if(!L.c){ L.c=nowStr(); save(); } }
+const isGreat=id=>{const L=S.log[id]; return !!(L&&L.c&&(L.ops||0)<=opsLimit(id));};
+
+/* ============ クラウド保存（Firebase Cloud Firestore） ============ */
+/* 論理回路の教材と同じ保存先を使う。記録の中に教材名（app）を入れて、別の教材の保存IDを読み込まないようにしている */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAgNLb2TKSD-a_yw6LrBbyeGNG2V_4H-Ko",
+  authDomain: "logic-circuit-basics.firebaseapp.com",
+  projectId: "logic-circuit-basics",
+  storageBucket: "logic-circuit-basics.firebasestorage.app",
+  messagingSenderId: "454179935245",
+  appId: "1:454179935245:web:0ba0c1ffdf736498f33144"
+};
+const FIREBASE_VER = '12.19.0';
+const SAVE_ID_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789', SAVE_ID_RE = /^[a-hj-km-np-z2-9]{8}$/;
+let fb = null;
+async function fbInit(){
+  if(fb) return fb;
+  const base=`https://www.gstatic.com/firebasejs/${FIREBASE_VER}/`;
+  const [appM, fsM] = await Promise.all([import(base+'firebase-app.js'), import(base+'firebase-firestore.js')]);
+  const app = appM.initializeApp(FIREBASE_CONFIG);
+  fb = { db: fsM.getFirestore(app), doc: fsM.doc, getDoc: fsM.getDoc, setDoc: fsM.setDoc, serverTimestamp: fsM.serverTimestamp };
+  return fb;
+}
+function newSaveId(){ const a=new Uint8Array(8); crypto.getRandomValues(a); return Array.from(a,x=>SAVE_ID_CHARS[x%SAVE_ID_CHARS.length]).join(''); }
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function withRetry(fn){
+  let err;
+  for(let i=0;i<3;i++){ try{ return await fn(); }catch(e){ err=e; if(e&&(e.code==='permission-denied'||e.code==='invalid-argument')) break; await sleep(700*(i+1)+Math.random()*700); } }
+  throw err;
+}
+const saveIdUrl=id=>location.origin+location.pathname+location.search+'#'+id;
+function setHash(id){ try{ history.replaceState(null,'',location.pathname+location.search+(id?'#'+id:'')); }catch(e){} }
+function hashId(){ let h=''; try{ h=decodeURIComponent(location.hash.slice(1)); }catch(e){} h=h.trim().toLowerCase(); return SAVE_ID_RE.test(h)?h:''; }
+function cloudErr(e){
+  if(e&&e.code==='too-large') return '記録が大きすぎて保存できませんでした。振り返りの文章を短くしてみよう。';
+  if(e&&e.code==='permission-denied') return '保存できませんでした（保存先の設定を先生に確認してください）。';
+  return 'インターネットに接続できなかったため、保存・読み込みができませんでした。少し待ってから、もう一度ためしてみよう。';
+}
+let cloud={busy:false,msg:'',err:false,copied:false};
+const rerender=()=>{ render.noScroll=true; render(); };
+async function cloudSave(){
+  if(cloud.busy) return;
+  cloud={busy:true,msg:'保存しています…',err:false,copied:false}; rerender();
+  try{
+    const F=await fbInit();
+    const o=JSON.parse(JSON.stringify(S)); delete o.saveId; delete o.unsaved; delete o.savedAt;
+    const data=JSON.stringify(o);
+    if(data.length>=30000) throw {code:'too-large'};
+    let id=SAVE_ID_RE.test(S.saveId||'')?S.saveId:'';
+    if(!id){
+      for(let k=0;k<5&&!id;k++){ const c=newSaveId(); const snap=await withRetry(()=>F.getDoc(F.doc(F.db,'saves',c))); if(!snap.exists()) id=c; }
+      if(!id) throw {code:'unavailable'};
+    }
+    await withRetry(()=>F.setDoc(F.doc(F.db,'saves',id),{v:1,data,updated:F.serverTimestamp()}));
+    S.saveId=id; S.unsaved=false; S.savedAt=nowStr(); save(); setHash(id);
+    cloud.msg=`保存しました（${S.savedAt}）`;
+  }catch(e){ cloud.err=true; cloud.msg=cloudErr(e); }
+  cloud.busy=false; rerender();
+}
+async function cloudFetch(id){
+  const F=await fbInit();
+  const snap=await withRetry(()=>F.getDoc(F.doc(F.db,'saves',id)));
+  if(!snap.exists()) return null;
+  return JSON.parse(migrateRaw(snap.data().data));
+}
+function hasLocalProgress(){ return screens.some(x=>DASH_ITEMS[x.id]&&dashStatus(x.id).a>0)||!!S.saveId; }
+function applyLoaded(id,data){
+  hideClear(); S=merge(initState(),data); S.saveId=id; S.unsaved=false; S.savedAt=''; save(); setHash(id);
+  prevCleared=null; cloud={busy:false,msg:'保存した記録を読み込みました',err:false,copied:false}; showTop=false; render();
+}
+async function loadById(id,fromUrl){
+  id=String(id||'').trim().toLowerCase();
+  if(!SAVE_ID_RE.test(id)){ showModal('保存IDが正しくありません','保存IDは8文字の英数字です。メモした保存IDをもう一度確かめよう。',[['閉じる',null]]); return; }
+  if(id===S.saveId&&fromUrl) return;
+  showModal('読み込んでいます…',`保存ID「${id}」の記録を探しています。`,[]);
+  let data;
+  try{ data=await cloudFetch(id); }
+  catch(e){ showModal('読み込めませんでした',cloudErr(e),[['閉じる',()=>{ if(fromUrl) setHash(S.saveId||''); }]]); return; }
+  if(!data){ showModal('記録が見つかりませんでした',`保存ID「${id}」の記録は見つかりませんでした。保存IDやURLをもう一度確かめよう。`,[['閉じる',()=>{ if(fromUrl) setHash(S.saveId||''); }]]); return; }
+  if(data.app!==APP_ID){ showModal('この教材の記録ではありません',`保存ID「${id}」は、別の教材（論理回路など）の記録です。この教材で保存したIDを入力しよう。`,[['閉じる',()=>{ if(fromUrl) setHash(S.saveId||''); }]]); return; }
+  if(hasLocalProgress()&&id!==S.saveId){
+    showModal('保存した記録を読み込みますか？',`保存ID「${id}」の記録を読み込みます。この端末に残っている今の記録は、読み込んだ記録に置き換わります。`,
+      [['読み込む',()=>applyLoaded(id,data),'primary'],['やめる',()=>{ if(fromUrl) setHash(S.saveId||''); }]]);
+    return;
+  }
+  hideModal(); applyLoaded(id,data);
+}
+function showModal(title,text,buttons){
+  let m=document.getElementById('cmodal');
+  if(!m){ m=document.createElement('div'); m.id='cmodal'; m.className='cmodal'; document.body.appendChild(m); }
+  m.innerHTML=`<div class="cm-box" role="dialog" aria-modal="true" aria-labelledby="cm-t"><h3 id="cm-t">${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p><div class="cm-btns">${buttons.map((b,i)=>`<button type="button" class="btn${b[2]?' '+b[2]:''}" data-cm="${i}">${escapeHtml(b[0])}</button>`).join('')}</div></div>`;
+  m.querySelectorAll('[data-cm]').forEach(el=>el.addEventListener('click',()=>{ const f=buttons[+el.dataset.cm][1]; hideModal(); if(f) f(); }));
+  m.classList.add('show');
+  const first=m.querySelector('button'); if(first) first.focus();
+}
+function hideModal(){ const m=document.getElementById('cmodal'); if(m) m.classList.remove('show'); }
+function bootFromHash(){
+  const id=hashId();
+  if(id){ loadById(id,true); return; }
+  if(S.saveId&&!location.hash) setHash(S.saveId);
+}
+window.addEventListener('hashchange',()=>{ const id=hashId(); if(id&&id!==S.saveId) loadById(id,true); });
+
+/* ============ ダッシュボード ============ */
+const isAdv=id=>/^e\d+$/.test(id);
+function dashTotals(){
+  const pages=screens.filter(x=>DASH_ITEMS[x.id]), basic=pages.filter(x=>!isAdv(x.id)), adv=pages.filter(x=>isAdv(x.id));
+  const sum=list=>list.reduce((t,x)=>{const d=dashStatus(x.id);t.n+=d.n;t.ok+=d.ok;t.a+=d.a;return t;},{n:0,ok:0,a:0});
+  const sb=sum(basic), sa=sum(adv), pb=Math.round(sb.ok/sb.n*100), pa=Math.round(sa.ok/sa.n*100);
+  return {pages,basic,adv,sb,sa,pb,pa,total:pb+pa};
+}
+function renderDash(){
+  const {basic,adv,sb,sa,pb,pa,total}=dashTotals();
+  const rows=list=>list.map(x=>{const d=dashStatus(x.id), r=Math.round(d.ok/d.n*100), L=S.log[x.id]||{};
+    const meta = d.st==='clear' ? `クリア ${L.c?dayOf(L.c):''}${L.ops?`・操作 ${L.ops}回`:''}${isGreat(x.id)?' <b class="great" title="少ない操作でクリア">◎</b>':''}` : (d.st==='wip'?`取り組み中${L.ops?`・操作 ${L.ops}回`:''}`:'未回答');
+    return `<button type="button" class="dprow" data-act="go" data-to="${screens.indexOf(x)}" title="${x.name}：${DST_LABEL[d.st]}">
+      <span class="dchip ${d.st}${isAdv(x.id)?' sq':''}">${x.rail}</span><span class="dpn">${x.name}<small class="dmeta">${meta}</small></span>
+      <span class="meter"><i style="width:${r}%"></i></span><span class="dpc">${d.ok} / ${d.n}</span></button>`;}).join('');
+  const gauge=(label,pct,t)=>`<div class="dgauge"><div class="dgl">${label}</div><div class="dgp">${pct}<small>%</small></div><span class="meter"><i style="width:${pct}%"></i></span><div class="note">正解 ${t.ok} / ${t.n}</div></div>`;
+  return `${head('★','ダッシュボード','0〜Bの取り組みのまとめ')}
+  <div class="dtop">
+    <div class="dtotal"><div class="dgl">達成率</div><div class="pct">${total}<small>%</small></div><div class="note">0〜6 で100%、A・B で さらに100%（最大200%）</div>${S.lastAt?`<div class="note">前回の取り組み：${S.lastAt}</div>`:''}</div>
+    ${gauge('基本（0〜6）',pb,sb)}
+    ${gauge('発展（A・B）',pa,sa)}
+  </div>
+  <section class="dbox"><h3 class="dph">各ページの取り組み</h3>
+  <div class="dlegend"><span class="dchip clear mini"></span>クリア　<span class="dchip wip mini"></span>取り組み中　<span class="dchip none mini"></span>未回答　<b class="great">◎</b>少ない操作でクリア</div>
+  <div class="dpages">
+    <div><h4 class="dph2">基本（0〜6）</h4>${rows(basic)}</div>
+    <div><h4 class="dph2">発展（A・B）</h4>${rows(adv)}</div>
+  </div></section>
+  <section class="dbox"><h3 class="dph">振り返り</h3>
+    <label class="rlab" for="ref-good">わかったこと・できるようになったこと</label><textarea id="ref-good" class="reftxt" data-act="text" data-path="ref.good" data-nocount="1" rows="3" maxlength="300">${escapeHtml(S.ref.good)}</textarea>
+    <label class="rlab" for="ref-hard">難しかったこと・もっと知りたいこと</label><textarea id="ref-hard" class="reftxt" data-act="text" data-path="ref.hard" data-nocount="1" rows="3" maxlength="300">${escapeHtml(S.ref.hard)}</textarea>
+  </section>
+  <section class="dbox dsubmit"><h3 class="dph">保存</h3>
+    <p class="note">「保存する」を押すと保存IDが発行され、このページのURLの最後に付きます。URL（または保存ID）をメモしておくと、次回そのURLを開いて続きから取り組めます。</p>
+    <button type="button" class="btn primary" data-act="cloudsave"${cloud.busy?' disabled':''}>${S.saveId?'保存する（上書き）':'保存する'}</button><span class="cmsg ${cloud.err?'ng':'ok'}" role="status">${escapeHtml(cloud.msg)}</span>
+    ${S.saveId?`<p aria-hidden="true">&nbsp;</p><div class="saveid-l">保存ID</div><div class="saveid"><b>${S.saveId}</b>${S.savedAt?`<span class="note">最後に保存：${S.savedAt}</span>`:''}</div>
+    <div class="saveurl"><input id="saveurl" readonly value="${escapeHtml(saveIdUrl(S.saveId))}" aria-label="続きから取り組むためのURL"><button type="button" class="btn sm" data-act="copyurl">URLをコピー</button>${cloud.copied?'<span class="note">コピーしました</span>':''}</div>
+    ${S.unsaved?'<p class="unsaved">保存したあとに取り組んだ内容があります。もう一度「保存する」を押そう。</p>':''}`:''}
+    <details class="loadbox"><summary>保存IDを入力して、続きから取り組む</summary><div class="row"><input id="loadid" maxlength="8" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="保存ID（8文字）" aria-label="保存ID"><button type="button" class="btn sm" data-act="loadid">読み込む</button></div></details>
+  </section>`;
+}
+
+const sub3=t=>`<h3 class="sub3">${t}</h3>`;
+const head=(no,title,sub)=>`<div class="ttl"><span class="no">${no}</span><h2>${title}${sub?`<span class="sub">${sub}</span>`:''}</h2></div>`;
+const howto=(items,cls)=>`<ul class="howto${cls?' '+cls:''}">${items.map(i=>`<li>${i}</li>`).join('')}</ul>`;
+const okOf=id=>DASH_ITEMS[id]().map(x=>x.ok);
+const allOk=id=>DASH_ITEMS[id]().every(x=>x.ok);
+
+/* ============ 各画面 ============ */
+/* 発展A：入力した内容から、アドレスの割り当て図を作る */
+function allocBar(){
+  const segs=[], warn=[];
+  ROOMS.forEach(([room,need],i)=>{
+    const n=toN(S.e1.pre[i]), na=toN(S.e1.na[i]);
+    if(!filled(S.e1.pre[i])||!filled(S.e1.na[i])) return;
+    if(!(n>=24&&n<=30)){ warn.push(`${room}：プレフィックス長は /24〜/30 の中で考えよう`); return; }
+    if(!(na>=0&&na<=255)){ warn.push(`${room}：ネットワークアドレスの第4オクテットは 0〜255 の数`); return; }
+    const size=P2(32-n), end=na+size-1;
+    const sg={i,room,n,na,end:Math.min(end,255),bad:false};
+    if(hosts(n)<need){ warn.push(`${room}：${need}台をつなぐには小さい（/${n} は ${hosts(n)}台まで）`); sg.bad=true; }
+    if(na%size!==0){ warn.push(`${room}：ネットワークアドレス ${na} は、アドレスの数 ${size} で割り切れない（サブネットの区切りとずれている）`); sg.bad=true; }
+    if(end>255){ warn.push(`${room}：192.168.50.255 をこえてしまう`); sg.bad=true; }
+    segs.push(sg);
+  });
+  segs.forEach((a,x)=>segs.forEach((b,y)=>{ if(x<y&&a.na<=b.end&&b.na<=a.end){ a.bad=b.bad=true; warn.push(`${a.room}と${b.room}のアドレスが重なっている`); } }));
+  const bar=`<div class="vbar">${segs.map(g=>`<div class="vseg c${g.i}${g.bad?' bad':''}" style="left:${g.na/256*100}%;width:${(g.end-g.na+1)/256*100}%" title="${g.room} 192.168.50.${g.na}/${g.n}（${g.na}〜${g.end}）"><span>${g.room}</span><small>/${g.n}${g.end-g.na>=31?`　${g.na}〜${g.end}`:''}</small></div>`).join('')}</div>
+    <div class="vticks">${[0,64,128,192,256].map(v=>`<span style="left:${v/256*100}%">${v===256?'255':v}</span>`).join('')}</div>`;
+  return `${scrollWrap(`<div style="min-width:620px">${bar}</div>`)}
+    <p class="note" style="text-align:center">192.168.50.□ の □（第4オクテット）の使い方</p>
+    ${warn.length?`<div class="vwarn">${warn.map(w=>`<p>${w}</p>`).join('')}</div>`:''}`;
+}
+/* 選択肢が長い問題は、選ぶ欄を問題文の下に置く */
+const qrowW=(...a)=>qrow(...a).replace('<div class="qrow">','<div class="qrow qw">');
+const v6html=n=>{ let k=0; return V6EX.split(':').map(g=>g.split('').map(c=>{ const cls=(k++)*4<n?'np':'hp'; return `<span class="${cls}">${c}</span>`; }).join('')).join(':'); };
+
+const screens=[
+{ id:'intro', rail:'0', name:'はじめに　ふりかえり',
+  render:()=>`${head('','はじめに')}
+  <div class="kbox"><h4>【おぼえておきたいこと】</h4>
+  <ul class="kl">  <li><b>サブネットマスク</b>：ネットワーク部を1、ホスト部を0で表したもの（例　/26 → 255.255.255.192）</li>
+  <li><b>ネットワークアドレス</b> ＝ IPアドレス AND サブネットマスク（ホスト部がすべて0）</li>
+  <li><b>ブロードキャストアドレス</b> ＝ IPアドレス OR 反転したマスク（ホスト部がすべて1）</li>
+  <li><b>接続できる台数</b> ＝ 2<sup>h</sup> − 2 台（h＝ホスト部のビット数）</li>
+  <li><b>同じネットワークか</b>：ネットワークアドレスが同じなら同じネットワーク（ハブだけで通信できる）</li></ul></div>
+  ${howto(['次の「？」を選んで答えよう'])}
+  <div class="qlist">${INTRO_Q.map((q,i)=>qrow(`(${i+1})`,q[0],pick(`intro.${i}`,q[1],'答え'),S.intro[i]!=='',S.intro[i]===q[2])).join('')}</div>`},
+
+{ id:'s1', rail:'1', name:'Step1 確認ドリル',
+  render:()=>{const {a,n}=drillP(), ok=drillOk(), solved=ok.every(x=>x), st=S.s1;
+  const prog = st.done>=DRILL_GOAL ? `クリア！（正解 ${st.done}問）　続けて練習してもよい` : `${st.done+1}問目　／　${DRILL_GOAL}問正解でクリア`;
+  return `${head('1','確認ドリル','毎回ちがう数で出題される')}
+  <p>IPアドレスとプレフィックス長から、サブネットマスク・ネットワークアドレス・ブロードキャストアドレス・接続できる台数を求めよう。</p>
+  ${howto(['4つとも正解すると「次の問題へ」ボタンが出る','わからないときは「2進数で見る」を押して、ネットワーク部とホスト部の区切りを確かめよう',`<b>${DRILL_GOAL}問正解でクリア</b>`])}
+  <div class="drillbox"><div class="dprog">${prog}</div><div class="drillq">${ipStr(a)}/${n}</div>
+  <div class="ctl" style="justify-content:center;margin-bottom:0"><button type="button" class="btn sm" data-act="flip" data-path="s1.hint">${st.hint?'2進数をかくす':'2進数で見る'}</button>${solved?'':'<button type="button" class="btn sm" data-act="drillskip">別の問題にする</button>'}</div></div>
+  ${st.hint?`${legendNH}${scrollWrap(`<div style="min-width:720px">${strip(a,n,{lab:'IPアドレス'})}</div>`)}<p class="note">ネットワーク部 ${n}ビット・ホスト部 ${32-n}ビット</p>`:''}
+  <div class="qlist">
+  ${qrow('(1)','サブネットマスク',ipIn('s1.mask','サブネットマスク'),ipFilled(st.mask),ok[0])}
+  ${qrow('(2)','ネットワークアドレス',ipIn('s1.na','ネットワークアドレス'),ipFilled(st.na),ok[1])}
+  ${qrow('(3)','ブロードキャストアドレス',ipIn('s1.ba','ブロードキャストアドレス'),ipFilled(st.ba),ok[2])}
+  ${qrow('(4)','接続できる台数',txt('s1.cnt','接続できる台数','num')+'<span>台</span>',filled(st.cnt),ok[3])}
+  </div>
+  ${solved?`<p class="verdict same">正解！${st.done>=DRILL_GOAL?'':`　あと${DRILL_GOAL-st.done}問でクリア`}</p><div class="ctl" style="justify-content:center"><button type="button" class="btn primary" data-act="drillnext">次の問題へ</button></div>`:''}`;}},
+
+{ id:'s2', rail:'2', name:'Step2 必要な台数からネットワークを決める',
+  render:()=>{const c=toN(S.s2.demo), pre=c>=1?needPre(c):null;
+  const rows=[30,29,28,27,26,25,24,23,22].map(n=>`<tr class="${n===pre?'hitr':''}"><td class="mono">/${n}</td><td>${32-n}ビット</td><td class="mono">${fmt(hosts(n))}台</td><td>${!(c>=1)?'':hosts(n)>=c?'<span class="ok-t">つなげる</span>':'<span class="ng-t">たりない</span>'}</td></tr>`).join('');
+  let v='<p class="verdict err">1以上の台数を入れよう</p>';
+  if(c>=1&&pre) v=`<p class="verdict same">${fmt(c)}台 → <span class="mono">/${pre}</span>（ホスト部 ${32-pre}ビット、${fmt(hosts(pre))}台まで）が、つなげるいちばん小さいネットワーク</p>`;
+  else if(c>=1) v='<p class="verdict err">台数が多すぎて、この表では考えられない</p>';
+  return `${head('2','必要な台数からネットワークの大きさを決める')}
+  <p>ネットワークを作るときは、つなぐ機器の台数に合わせて大きさ（プレフィックス長）を決める。大きすぎるとアドレスがむだになり、小さすぎると機器をつなげない。</p>
+  <div class="kbox"><p>2<sup>h</sup> − 2 ≧ 必要な台数　になる、<b>いちばん小さい h</b>（ホスト部のビット数）を探す。</p><p>プレフィックス長 ＝ 32 − h</p><p class="note">台数には、パソコンなどのほかに、ルータ（デフォルトゲートウェイ）のアドレスもふくめて数える。</p></div>
+  ${howto(['必要な台数を入れて、どのプレフィックス長を選べばよいか確かめる'])}
+  <div class="ctl"><span class="tagline">必要な台数</span>${txt('s2.demo','必要な台数','num',true)}<span>台</span></div>
+  ${v}
+  <div class="scroll"><table class="tbl nw" style="margin:10px auto"><thead><tr><th>プレフィックス長</th><th>ホスト部</th><th>接続できる台数</th><th>判定</th></tr></thead><tbody>${rows}</tbody></table></div>
+  ${sub3('① プレフィックス長を答えよう')}
+  <p class="note">台数をつなげる、いちばん小さいネットワークのプレフィックス長を答える。</p>
+  <div class="qlist">${S2Q.map((q,i)=>qrow(`(${i+1})`,i<6?`${q[0]}（ルータもふくむ）をつなぐネットワーク`:`${q[0]}のネットワーク`,`<span class="fx mono">/</span>`+txt(`s2.q.${i}`,'プレフィックス長','num'),filled(S.s2.q[i]),toN(S.s2.q[i])===needPre(q[1]))).join('')}</div>
+  ${sub3('② 考えよう')}
+  <div class="qlist">${qrowW('(8)','(3)の31台で、/27 では足りない理由は',pick('s2.why',WHY2,'理由'),S.s2.why!=='',S.s2.why===WHY2[0])}</div>`;}},
+
+{ id:'s3', rail:'3', name:'Step3 特別なIPアドレス',
+  render:()=>{const d=S.s3.demo, ok=ipValid(d), c=ok?classify(ipVals(d)):null;
+  return `${head('3','特別なIPアドレス')}
+  <p>IPアドレスの中には、特別な意味をもつものがある。パソコンの設定を確かめるときや、ネットワークの調子が悪いときに役立つ。</p>
+  <div class="scroll"><table class="tbl" style="min-width:760px"><thead><tr><th>アドレス</th><th>名前</th><th>意味・使われ方</th></tr></thead><tbody>
+  <tr><td class="mono">127.0.0.1</td><td class="nowrap">ループバックアドレス</td><td class="l">自分自身を表す。パケットはネットワークに出ずに、自分のコンピュータの中で折り返す（動作の確認などに使う）</td></tr>
+  <tr><td class="mono">169.254.0.0 〜<br>169.254.255.255</td><td class="nowrap">リンクローカルアドレス</td><td class="l">DHCPサーバからIPアドレスを受け取れなかったときなどに、機器が自分で付ける。同じLANの中でしか使えず、インターネットには出られない</td></tr>
+  <tr><td class="mono">255.255.255.255</td><td class="nowrap">ブロードキャストアドレス</td><td class="l">自分がいるネットワークのすべての機器にまとめて送る。IPアドレスがまだ決まっていない機器が、DHCPサーバを探すときにも使う</td></tr>
+  <tr><td class="mono">0.0.0.0</td><td>—</td><td class="l">「まだIPアドレスがない」ことを表す（DHCPサーバを探すときの送信元）。経路表では「すべての宛先」を表す（Step5）</td></tr>
+  </tbody></table></div>
+  ${howto(['下のマスにIPアドレスを入れて、どんなアドレスか確かめる'])}
+  <div class="ctl"><span class="tagline">確かめる</span>${ipIn('s3.demo','確かめるIPアドレス',true)}</div>
+  ${ok?`<p class="verdict same">${ipStr(ipVals(d))}：${c[0]}<br><span class="note" style="font-weight:400">${c[1]}</span></p>`:'<p class="verdict err">それぞれのマスには 0〜255 の数を入れよう</p>'}
+  ${sub3('問題')}
+  <div class="qlist">${S3Q.map((q,i)=>qrowW(`(${i+1})`,q[0],pick(`s3.q.${i}`,q[1],'答え'),S.s3.q[i]!=='',S.s3.q[i]===q[2])).join('')}</div>
+  <div class="kbox"><h4>コラム　ネットワークアドレスを機器に設定すると？</h4>
+  <p>Windowsで、192.168.1.0（サブネットマスク 255.255.255.0）のように、ホスト部がすべて0のアドレスを設定しようとすると、「IPアドレスとサブネットマスクの組み合わせが無効です」という意味のメッセージが出て、設定できない。ホスト部がすべて1のブロードキャストアドレスも同じ。</p>
+  <p>ネットワークアドレスは、ルータの経路表などで「ネットワーク全体」を表す名前として使われる。古い機器の中には、ホスト部がすべて0のアドレスをブロードキャストとして扱うものもあり、機器に割り当てると相手によって扱いがばらばらになってしまう。</p></div>`;}},
+
+{ id:'s4', rail:'4', name:'Step4 つながらない原因をさがそう',
+  render:()=>{const w=S.s4.who, t=S.s4.to, r=R4[w][t];
+  const vc=r[0]==='○'?'same':r[0]==='×'?'ngv':'warn', vt=r[0]==='○'?'通信できる':r[0]==='×'?'通信できない':'通信が不安定';
+  return `${head('4','つながらない原因をさがそう','トラブルシューティング')}
+  <p><b class="mono">192.168.10.0/24</b> のLANに、パソコンA〜Fとプリンタがつながっている。ルータのLAN側のIPアドレス（デフォルトゲートウェイ）は <b class="mono">192.168.10.254</b>。ところが、うまく通信できないパソコンがある。設定を見て原因をさがそう。</p>
+  ${troubleFig(w,t)}
+  <div class="scroll"><table class="tbl nw" style="margin:8px auto"><thead><tr><th>機器</th><th>IPアドレス</th><th>サブネットマスク</th><th>デフォルトゲートウェイ</th></tr></thead><tbody>
+  ${PCS.concat([PRN]).map(p=>`<tr><td>${p[0]}</td><td class="mono">${p[1]}</td><td class="mono">${p[2]}</td><td class="mono">${p[3]}</td></tr>`).join('')}
+  </tbody></table></div>
+  ${sub3('① それぞれのパソコンの設定は')}
+  <div class="qlist">${PCS.map((p,i)=>qrow(`(${i+1})`,p[0],pick(`s4.c.${i}`,CAUSES,p[0]+'の設定'),S.s4.c[i]!=='',S.s4.c[i]===CAUSES[p[4]])).join('')}</div>
+  ${sub3('② 通信テストで確かめよう')}
+  ${howto(['パソコンと通信先を選ぶと、通信できるかどうかと、その理由が表示される'])}
+  <div class="ctl"><span class="tagline">パソコン</span>${segSel('s4.who',[0,1,2,3,4,5],'パソコン',x=>'ABCDEF'[x])}</div>
+  <div class="ctl"><span class="tagline">通信先</span><span class="segsel" role="group" aria-label="通信先">${TARGETS.map((x,i)=>`<button type="button" data-act="set" data-path="s4.to" data-val="${i}" aria-pressed="${t===i}" style="font-family:inherit">${x}</button>`).join('')}</span></div>
+  <div class="verdict ${vc} fix3"><span class="mk2">${r[0]}</span>${PCS[w][0]} → ${TARGETS[t]}：${vt}<div class="vstack">${R4.flatMap((row,i)=>row.map((x,j)=>`<p class="vexp${i===w&&j===t?'':' vhide'}"${i===w&&j===t?'':' aria-hidden="true"'}>${x[1]}</p>`)).join('')}</div></div>
+  ${sub3('③ 考えよう')}
+  <div class="qlist">
+  ${qrow('(7)','パソコンBは、同じLANのプリンタと通信',pick('s4.q1',S4Q1,'パソコンBとプリンタの通信'),S.s4.q1!=='',S.s4.q1===S4Q1[0])}
+  ${qrow('(8)','パソコンEの設定を直す。IPアドレスとして使えるものは',pick('s4.q2',S4Q2,'パソコンEに使えるIPアドレス'),S.s4.q2!=='',S.s4.q2===S4Q2[2])}
+  ${qrow('(9)','パソコンFのサブネットマスクを正しく直すと',ipIn('s4.mask','パソコンFのサブネットマスク'),ipFilled(S.s4.mask),ipEq(S.s4.mask,[255,255,255,0]))}
+  </div>`;}},
+
+{ id:'s5', rail:'5', name:'Step5 ルータの経路表',
+  render:()=>{const d=S.s5.demo, ok=ipValid(d), a=ok?ipVals(d):null, hit=ok?routeOf(a):-1, mt=ok?routeMatch(a):[];
+  const rows=ROUTES.map(([net,n,port],i)=>`<tr class="${i===hit?'hitr':''}"><td class="mono">${ipStr(net)}/${n}</td><td class="mono">${ipStr(maskOf(n))}</td><td class="mono">${ok?ipStr(netOf(a,n)):''}</td><td>${ok?(mt[i]?'<span class="ok-t">一致</span>':'<span class="ng-t">×</span>'):''}</td><td>${port}</td></tr>`).join('');
+  const nm=mt.filter(x=>x).length;
+  return `${head('5','ルータの経路表','パケットの行き先の決め方')}
+  <p>ルータは、届いたパケットを<b>どのポートから送り出すか</b>を、<b>経路表</b>（ルーティングテーブル）を見て決める。経路表には「宛先のネットワーク」と「そのネットワークへ送り出すポート」が書かれている。</p>
+  ${routeFig(hit)}
+  <div class="kbox"><h4>経路表の見方</h4>
+  <p>① 宛先IPアドレスと、各行のサブネットマスクで<b>AND演算</b>をする（ネットワークアドレスの求め方と同じ）。</p>
+  <p>② 結果が、その行の宛先ネットワークと<b>一致</b>する行を探す。</p>
+  <p>③ 一致する行が複数あるときは、<b>プレフィックス長がいちばん長い行</b>（範囲が一番狭い、詳しい行）を選ぶ。これを<b>ロンゲストマッチ</b>という。</p>
+  <p>④ <span class="mono">0.0.0.0/0</span> はサブネットマスクが 0.0.0.0 なので、AND演算の結果はいつも 0.0.0.0 になり、<b>どんな宛先とも一致</b>する。ほかに一致する行がないときに使われる経路で、<b>デフォルトルート</b>という（パソコンのデフォルトゲートウェイと同じ考え方）。</p></div>
+  ${howto(['宛先IPアドレスを変えて、どの行と一致し、どのポートから送り出されるか確かめる'])}
+  <div class="ctl"><span class="tagline">宛先IPアドレス</span>${ipIn('s5.demo','宛先IPアドレス',true)}</div>
+  ${scrollWrap(`<table class="tbl nw" style="margin:8px auto"><thead><tr><th>宛先ネットワーク</th><th>サブネットマスク</th><th>宛先 AND マスク</th><th>判定</th><th>送り出すポート</th></tr></thead><tbody>${rows}</tbody></table>`)}
+  ${ok?`<p class="verdict same">${ipStr(a)} は ${ROUTES[hit][2]} から送り出す${nm>1?`<span class="note" style="font-weight:400">（一致した ${nm} 行のうち、プレフィックス長がいちばん長い /${ROUTES[hit][1]} の行を選ぶ）</span>`:''}</p>`:'<p class="verdict err">それぞれのマスには 0〜255 の数を入れよう</p>'}
+  ${sub3('① どのポートから送り出すか答えよう')}
+  <div class="qlist">${S5D.map((dd,i)=>qrow(`(${i+1})`,`宛先 <span class="mono">${ipStr(dd)}</span>`,pick(`s5.q.${i}`,PORTS,'送り出すポート'),S.s5.q[i]!=='',S.s5.q[i]===PORTS[routeOf(dd)])).join('')}</div>
+  ${sub3('② 考えよう')}
+  <div class="qlist">${qrowW('(6)','(3)の宛先が、ポート3ではなくポート4から送り出される理由は',pick('s5.why',WHY5,'理由'),S.s5.why!=='',S.s5.why===WHY5[0])}</div>`;}},
+
+{ id:'s6', rail:'6', name:'Step6 サブネット化の演習',
+  render:()=>{const P=subP(), ok=subOk(), solved=ok.every(x=>x), st=S.s6;
+  const prog = st.done>=DRILL_GOAL ? `クリア！（正解 ${st.done}問）　続けて練習してもよい` : `${st.done+1}問目　／　${DRILL_GOAL}問正解でクリア`;
+  const lab=a=>P.n>=24?String(a[3]):`${a[2]}.${a[3]}`;
+  const blocks=solved?`<div class="scroll"><div class="blocks" style="min-width:${P.k>8?640:0}px">${[...Array(P.k)].map((_,i)=>{const s=n2ip(ip2n(P.base)+i*P.size), e=bcOf(s,P.pre);
+    return `<div class="bk${i+1===P.m?' hit':i%2?' alt':''}">${lab(s)}〜${lab(e)}<small>${i+1}番目</small></div>`;}).join('')}</div></div>
+    <p class="note">${P.n>=24?'第4オクテット':'第3オクテット.第4オクテット'}の範囲。${P.m}番目（緑色）が、この問題で答えたサブネット。</p>`:'';
+  return `${head('6','サブネット化の演習','毎回ちがう数で出題される')}
+  <p>1つのネットワークを、同じ大きさのサブネットに分ける。ネットワーク部を<b>kビット延ばすと 2<sup>k</sup> 個</b>のサブネットに分かれる。</p>
+  ${howto(['6つとも正解すると「次の問題へ」ボタンが出る','わからないときは「ヒント」を押そう',`<b>${DRILL_GOAL}問正解でクリア</b>`])}
+  <div class="drillbox"><div class="dprog">${prog}</div>
+  <div class="drillq" style="font-size:clamp(1.15rem,4.6vw,1.7rem)">${ipStr(P.base)}/${P.n} を <span style="color:var(--in-edge)">${P.k}個</span> に分ける</div>
+  <div class="ctl" style="justify-content:center;margin-bottom:0"><button type="button" class="btn sm" data-act="flip" data-path="s6.hint">${st.hint?'ヒントをかくす':'ヒント'}</button>${solved?'':'<button type="button" class="btn sm" data-act="subskip">別の問題にする</button>'}</div></div>
+  ${st.hint?`<div class="kbox"><p>(1) 2<sup>延ばすビット数</sup> ＝ 分ける数　（2個→1ビット、4個→2ビット、8個→3ビット、16個→4ビット）</p>
+  <p>(2) 分けたあとのプレフィックス長 ＝ もとのプレフィックス長 ＋ 延ばすビット数</p>
+  <p>(5) □番目のネットワークアドレス ＝ 最初のアドレス ＋（□ − 1）×（1つのサブネットのアドレスの数）。アドレスの数は 2<sup>ホスト部のビット数</sup></p>
+  <p>(6) ブロードキャストアドレス ＝ 次のサブネットのネットワークアドレスの1つ前</p></div>`:''}
+  <div class="qlist">
+  ${qrow('(1)','ネットワーク部を何ビット延ばすか',txt('s6.bits','延ばすビット数','num')+'<span>ビット</span>',filled(st.bits),ok[0])}
+  ${qrow('(2)','分けたあとのプレフィックス長',`<span class="fx mono">/</span>`+txt('s6.pre','プレフィックス長','num'),filled(st.pre),ok[1])}
+  ${qrow('(3)','分けたあとのサブネットマスク',ipIn('s6.mask','サブネットマスク'),ipFilled(st.mask),ok[2])}
+  ${qrow('(4)','1つのサブネットに接続できる台数',txt('s6.cnt','接続できる台数','num')+'<span>台</span>',filled(st.cnt),ok[3])}
+  ${qrow('(5)',`<b>${P.m}番目</b>のサブネットのネットワークアドレス`,ipIn('s6.na',`${P.m}番目のネットワークアドレス`),ipFilled(st.na),ok[4])}
+  ${qrow('(6)',`<b>${P.m}番目</b>のサブネットのブロードキャストアドレス`,ipIn('s6.ba',`${P.m}番目のブロードキャストアドレス`),ipFilled(st.ba),ok[5])}
+  </div>
+  ${solved?`<p class="verdict same">正解！${st.done>=DRILL_GOAL?'':`　あと${DRILL_GOAL-st.done}問でクリア`}</p>${blocks}<div class="ctl" style="justify-content:center"><button type="button" class="btn primary" data-act="subnext">次の問題へ</button></div>`:''}`;}},
+
+{ id:'e1', rail:'A', name:'発展1 台数に合わせてサブネットを設計',
+  render:()=>`${head('A','台数に合わせてサブネットを設計しよう','発展1')}
+  <p>ある学校で、<b class="mono">192.168.50.0/24</b> を4つの部屋のネットワークに分ける。部屋ごとに必要な台数がちがうので、それぞれの台数に合った大きさのサブネットにする（台数にはルータの分もふくむ）。</p>
+  <table class="tbl" style="margin:8px auto"><thead><tr><th>部屋</th><th>必要な台数</th></tr></thead><tbody>${ROOMS.map(r=>`<tr><td>${r[0]}</td><td class="mono">${r[1]}台</td></tr>`).join('')}</tbody></table>
+  ${howto(['それぞれの部屋に、台数をつなげる<b>いちばん小さいサブネット</b>を選ぶ','<b>大きいサブネットから順に</b>、小さいアドレスから割り当てる','サブネットのネットワークアドレスは、そのサブネットのアドレスの数（128、64、32、16）で<b>割り切れる数</b>にする','下の図は、入力した内容に合わせて変わる'])}
+  ${allocBar()}
+  ${sub3('① サブネットを割り当てよう')}
+  <div class="scroll"><table class="tt e1t"><thead><tr><th>部屋</th><th>プレフィックス長</th><th>ネットワークアドレス</th><th>ブロードキャストアドレス</th></tr></thead><tbody>
+  ${ROOMS.map((r,i)=>`<tr><td>${r[0]}<br><small class="note">${r[1]}台</small></td><td><span class="fx mono">/</span>${txt(`e1.pre.${i}`,`${r[0]}のプレフィックス長`,'oct')}</td><td>${lastIn('192.168.50.',`e1.na.${i}`,`${r[0]}のネットワークアドレスの第4オクテット`)}</td><td>${lastIn('192.168.50.',`e1.ba.${i}`,`${r[0]}のブロードキャストアドレスの第4オクテット`)}</td></tr>`).join('')}
+  </tbody></table></div>
+  ${sub3('② 残りのアドレス')}
+  <div class="qlist">
+  ${qrow('(1)','4つの部屋に割り当てたあと、使わずに残るアドレスの範囲',`${lastIn('192.168.50.','e1.rest','残りの最初のアドレスの第4オクテット')}<span class="mono">〜 192.168.50.255</span>`)}
+  ${qrow('(2)','残りのアドレスで1つのサブネットを作ると、接続できる台数',txt('e1.cnt','接続できる台数','num')+'<span>台</span>')}
+  </div>`},
+
+{ id:'e2', rail:'B', name:'発展2 IPv6のネットワーク',
+  render:()=>{const n=S.e2.n;
+  return `${head('B','IPv6のネットワーク','発展2')}
+  <p>IPv6アドレス（128ビット）も、IPv4と同じように前半がネットワークを、後半がネットワークの中の機器を表す。IPv6では前半を<b>プレフィックス</b>、後半を<b>インタフェースID</b>という。LANでは、前半64ビット・後半64ビットに分ける <b>/64</b> がふつうに使われる。</p>
+  ${howto(['プレフィックス長を切り替えて、どこまでがプレフィックスか確かめる（16進数の1けたは4ビット）'])}
+  <div class="ctl"><span class="tagline">プレフィックス長</span>${segSel('e2.n',[48,56,64],'プレフィックス長',x=>'/'+x)}</div>
+  <div class="v6 v6b">${v6html(n)}</div>
+  <div class="legend"><span><span class="swatch" style="background:var(--in)"></span>プレフィックス（${n}ビット＝16進数${n/4}けた）</span><span><span class="swatch" style="background:var(--out)"></span>インタフェースID（${128-n}ビット）</span></div>
+  ${n===64?'<p class="note">/64 のネットワークでは、インタフェースIDの組み合わせが 2<sup>64</sup> ＝ 約1844京通りもある。IPv4の /24（254台）とくらべると、とても大きい。</p>':`<p class="note">/${n} のプレフィックスを受け取った組織は、それを /64 のネットワークにいくつも分けて使う（/${n} から /64 は ${64-n}ビット延ばすので 2<sup>${64-n}</sup> ＝ ${fmt(P2(64-n))}個）。</p>`}
+  ${sub3('IPv4とIPv6のちがい')}
+  <div class="scroll"><table class="tbl nw" style="margin:8px auto"><thead><tr><th></th><th>IPv4</th><th>IPv6</th></tr></thead><tbody>
+  <tr><td>長さ</td><td>32ビット</td><td>128ビット</td></tr>
+  <tr><td>書き方</td><td>10進数をピリオドでつなぐ</td><td>16進数をコロンでつなぐ</td></tr>
+  <tr><td>LANの大きさの例</td><td class="mono">/24（254台）</td><td class="mono">/64</td></tr>
+  <tr><td>自分自身（ループバック）</td><td class="mono">127.0.0.1</td><td class="mono">::1</td></tr>
+  <tr><td>同じLANの中だけで使う</td><td class="mono">169.254.0.0/16</td><td class="mono">fe80::/10</td></tr>
+  <tr><td>ブロードキャストアドレス</td><td>ある</td><td>ない（マルチキャストで代わりをする）</td></tr>
+  <tr><td>NAPT</td><td>家庭や学校で広く使う</td><td>アドレスが十分にあるので、ふつうは使わない</td></tr>
+  </tbody></table></div>
+  ${sub3('問題')}
+  <div class="qlist">${E2Q.map((q,i)=>qrow(`(${i+1})`,q.q,pick(`e2.q.${i}`,q.o,'答え'))).join('')}</div>`;}},
+
+{ id:'dash', rail:'★', name:'ダッシュボード', render:()=>renderDash() }
+];
+screens.forEach(sc=>{ if(DASH_ITEMS[sc.id]){ sc.cleared=()=>allOk(sc.id); } else sc.cleared=()=>false; });
+const SC=id=>screens.find(s=>s.id===id);
+
+/* ============ トップ画面 ============ */
+let showTop = true;
+function renderTop(){ document.body.classList.toggle('is-top',showTop); }
+
+/* ============ 画面の切り替え ============ */
+/* false のあいだは、進捗バーからどのページにも移動できる（true にすると、前のステップをクリアしないと進めない） */
+const LOCK_STEPS = false;
+/* ○×を表示しないステップ（すべて正解でクリア） */
+const NOMARK = new Set(['e1','e2']);
+function accessible(i){
+  if(!LOCK_STEPS||unlockAll||i===0||screens[i].id==='dash') return true;
+  return accessible(i-1)&&screens[i-1].cleared();
+}
+let prevCleared=null;
+/* 画面の差分だけを書き換える（スライダーをドラッグ中でも要素を作り直さない） */
+function morphNode(a,b){
+  if(a.nodeType!==b.nodeType||a.nodeName!==b.nodeName){ a.replaceWith(b.cloneNode(true)); return; }
+  if(a.nodeType!==1){ if(a.nodeValue!==b.nodeValue) a.nodeValue=b.nodeValue; return; }
+  for(const at of [...a.attributes]) if(!b.hasAttribute(at.name)) a.removeAttribute(at.name);
+  for(const at of [...b.attributes]) if(a.getAttribute(at.name)!==at.value) a.setAttribute(at.name,at.value);
+  morphChildren(a,b);
+}
+function morphChildren(a,b){
+  const ac=[...a.childNodes], bc=[...b.childNodes];
+  bc.forEach((n,i)=>{ if(i<ac.length) morphNode(ac[i],n); else a.appendChild(n.cloneNode(true)); });
+  for(let i=bc.length;i<ac.length;i++) a.removeChild(ac[i]);
+}
+function render(){
+  renderTop(); if(showTop) return;
+  if(!accessible(S.cur)) S.cur=0;
+  const sc=screens[S.cur];
+  const act=document.activeElement, fidv=act&&act.id, sel=act&&act.selectionStart;
+  hideMarks=NOMARK.has(sc.id);
+  const mainEl=document.getElementById('main'); mainEl.classList.toggle('nomark',hideMarks);
+  if(render.morph){ const tmp=document.createElement('div'); tmp.innerHTML=sc.render(); morphChildren(mainEl,tmp); }
+  else mainEl.innerHTML=sc.render();
+  let r='';
+  screens.forEach((s,i)=>{
+    if(i>0) r+=`<span class="seg-w${screens[i-1].cleared()?' lit':''}"></span>`;
+    r+=`<button type="button" class="node${isAdv(s.id)?' sq':''}${s.cleared()?' done':''}${i===S.cur?' cur':''}" data-act="go" data-to="${i}" ${accessible(i)?'':'disabled'} aria-label="${s.name}${s.cleared()?'（クリア）':''}" title="${s.name}" ${i===S.cur?'aria-current="step"':''}>${s.rail}</button>`;
+  });
+  const rail=document.getElementById('rail'); rail.innerHTML=r;
+  const curNode=rail.querySelector('.cur'); if(curNode&&curNode.scrollIntoView&&!render.noScroll){ try{curNode.scrollIntoView({block:'nearest',inline:'center'});}catch(e){} }
+  const cl=sc.cleared();
+  const st=document.getElementById('status');
+  if(sc.id==='dash') st.textContent='';
+  else if(hideMarks) st.textContent = cl ? (S.cur===screens.length-2 ? '発展課題はすべて終了です！' : 'クリア！　次へ進もう') : 'すべて正解するとクリアになるよ！';
+  else { const d=dashStatus(sc.id); st.textContent = cl ? 'クリア！　次へ進もう' : `正解 ${d.ok} / ${d.n}`; }
+  st.className='status'+(cl?' clear':'');
+  const nx=document.getElementById('nexts'); let h='';
+  const justNow = prevCleared===false && cl;
+  const b=(to,label,primary)=>`<button type="button" class="btn${primary?' primary':''}${justNow&&primary?' ready':''}" data-act="go" data-to="${to}" ${(cl||unlockAll)?'':'disabled'}>${label}</button>`;
+  const nxt=screens[S.cur+1];
+  if(!nxt) h='';
+  else if(sc.id==='s6') h=b(S.cur+1,'発展課題へ',true);
+  else if(nxt.id==='dash') h=`<button type="button" class="btn primary${justNow?' ready':''}" data-act="go" data-to="${S.cur+1}">ダッシュボード</button>`;
+  else h=b(S.cur+1,'次へ進む',true);
+  if(justNow){ recordClear(sc.id); showClear(); }
+  nx.innerHTML=h;
+  prevCleared=cl;
+  if(fidv){ const el=document.getElementById(fidv); if(el&&el!==document.body){ try{el.focus({preventScroll:true}); if(sel!=null&&el.setSelectionRange) el.setSelectionRange(sel,sel);}catch(e){} } }
+  render.noScroll=false; render.morph=false;
+}
+let clearTimer=null;
+function showClear(){
+  const el=document.getElementById('cleartoast'); if(!el) return;
+  const sh=document.getElementById('main'), bar=document.querySelector('.bar');
+  if(sh){
+    const r=sh.getBoundingClientRect(), bottomLimit=window.innerHeight-(bar?bar.offsetHeight:0);
+    const top=Math.max(r.top,0), bot=Math.min(r.bottom,bottomLimit);
+    el.style.left=(r.left+r.width/2)+'px';
+    el.style.top=(bot>top?(top+bot)/2:window.innerHeight/2)+'px';
+  }
+  el.classList.remove('show'); void el.offsetWidth;
+  el.classList.add('show'); clearTimeout(clearTimer);
+  clearTimer=setTimeout(()=>el.classList.remove('show'),1250);
+}
+function hideClear(){
+  const el=document.getElementById('cleartoast'); if(!el) return;
+  clearTimeout(clearTimer);
+  el.style.transition='none'; el.classList.remove('show'); void el.offsetWidth; el.style.transition='';
+}
+function go(to){ hideClear(); S.cur=to; prevCleared=null; save(); render(); window.scrollTo({top:0}); }
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]'); if(!t||t.disabled) return;
+  const a=t.dataset.act, p=t.dataset.path;
+  if(a==='go'){ go(+t.dataset.to); return; }
+  if(a==='start'){ showTop=false; prevCleared=null; render(); window.scrollTo({top:0}); return; }
+  if(a==='cloudsave'){ cloudSave(); return; }
+  if(a==='loadid'){ const el=document.getElementById('loadid'); loadById(el?el.value:'',false); return; }
+  if(a==='copyurl'){ const box=document.getElementById('saveurl'), url=saveIdUrl(S.saveId); const done=()=>{cloud.copied=true;rerender();};
+    try{ navigator.clipboard.writeText(url).then(done,()=>{box.select();try{document.execCommand('copy');}catch(_){}done();}); }catch(_){ box.select(); try{document.execCommand('copy');}catch(__){} done(); } return; }
+  if(a==='drillnext'||a==='drillskip'){ S.s1.p=genDrill(S.s1.p); S.s1.mask=b4(); S.s1.na=b4(); S.s1.ba=b4(); S.s1.cnt=''; S.s1.counted=false; S.s1.hint=0; }
+  else if(a==='subnext'||a==='subskip'){ S.s6.p=genSub(S.s6.p); S.s6.bits=''; S.s6.pre=''; S.s6.cnt=''; S.s6.mask=b4(); S.s6.na=b4(); S.s6.ba=b4(); S.s6.counted=false; S.s6.hint=0; }
+  else if(a==='flip'){ setPath(p,getPath(p)?0:1); }
+  else if(a==='tog'){ setPath(p,getPath(p)===1?0:1); }
+  else if(a==='set'){ setPath(p,+t.dataset.val); }
+  else if(a==='cyc'){ countOp(); const v=getPath(p); setPath(p,v===null?0:v===0?1:0); }
+  else return;
+  save(); render.noScroll=true; render();
+});
+document.addEventListener('keydown',e=>{
+  const t=e.target; if(!t.dataset||!t.dataset.path) return;
+  const a=t.dataset.act;
+  /* IPアドレスのマスでは「.」で次のマスへ移る */
+  if(a==='text'&&t.classList.contains('oct')&&(e.key==='.'||e.key==='。'||e.key==='．')){
+    e.preventDefault(); const g=t.closest('.ipin'); if(!g) return;
+    const all=[...g.querySelectorAll('input.oct')], k=all.indexOf(t); if(k>=0&&k<all.length-1){ all[k+1].focus(); all[k+1].select(); }
+    return;
+  }
+  if(a==='cyc'&&(e.key==='0'||e.key==='1')){ e.preventDefault(); countOp(); setPath(t.dataset.path,+e.key); save(); render.noScroll=true; render(); }
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset&&t.dataset.act==='sel'){ countOp(); setPath(t.dataset.path,t.value); save(); render.noScroll=true; render(); }
+});
+document.addEventListener('input',e=>{
+  const t=e.target; if(!t.dataset) return;
+  if(t.dataset.act==='range'){ setPath(t.dataset.path,+t.value); save(); render.noScroll=true; render.morph=true; render(); return; }
+  if(t.dataset.act!=='text') return;
+  if(!t.dataset.nocount) countOp(); else if(S.saveId&&/^ref\./.test(t.dataset.path)) S.unsaved=true;
+  setPath(t.dataset.path,t.value);
+  if(/^s1\./.test(t.dataset.path)&&!S.s1.counted&&drillSolved()){ S.s1.counted=true; S.s1.done++; }
+  if(/^s6\./.test(t.dataset.path)&&!S.s6.counted&&subSolved()){ S.s6.counted=true; S.s6.done++; }
+  save();
+  if(!/^ref\./.test(t.dataset.path)){ render.noScroll=true; render(); }
+});
+document.getElementById('back').addEventListener('click',()=>{ if(S.cur>0) go(S.cur-1); else { hideClear(); showTop=true; render(); window.scrollTo({top:0}); } });
+const rs=document.getElementById('reset'); let armed=false;
+rs.addEventListener('click',()=>{
+  if(!armed){ armed=true; rs.textContent='本当に消去しますか？（もう一度押すと消去）'; setTimeout(()=>{armed=false;rs.textContent='記録を消して最初からやり直す';},4000); return; }
+  hideClear(); S=initState(); setHash(''); cloud={busy:false,msg:'',err:false,copied:false}; showTop=true; armed=false; rs.textContent='記録を消して最初からやり直す'; save(); prevCleared=null; render(); window.scrollTo({top:0});
+});
+/* 先生用：タイトルをShiftキーを押しながらクリックすると、全ステップを自由に行き来できる */
+document.getElementById('apptitle').addEventListener('click',e=>{ if(!e.shiftKey){ hideClear(); showTop=true; render(); window.scrollTo({top:0}); return; } unlockAll=!unlockAll; document.getElementById('apptitle').title=unlockAll?'全ステップ開放中（先生用）':'トップ画面へ'; render(); });
+render();
+bootFromHash();
+</script>
+</body>
+</html>
