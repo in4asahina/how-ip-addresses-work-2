@@ -181,7 +181,7 @@ table.tt{border-collapse:collapse;margin:0 auto}
 .probs.two{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media (max-width:640px){.probs.two{grid-template-columns:1fr}}
 .probs.two .prob svg{max-width:300px}
-/* Step4以降は○×を出さない */
+/* ○×を出さないページ用（NOMARK に入れたページだけに効く。現在はなし） */
 .nomark .m{display:none}
 .prob{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:8px}
 .prob .qn{font-weight:700;color:var(--muted);font-size:.9rem}
@@ -461,6 +461,18 @@ select.tsel option{color:var(--ink);background:var(--paper);font-weight:400}
 .netsvg .t{font-size:14px}
 .netsvg .ts{font-size:12px}
 .netsvg .tm{fill:var(--ink);font-family:"BIZ UDGothic",monospace;font-weight:700;font-size:13px}
+/* Step4の表：スマホ幅でも画面に収める */
+@media (max-width:520px){
+  .tt.s5t th:not(.m),.tt.s5t td:not(.m){width:auto;min-width:0;padding:4px 5px}
+  .tt.s5t td.v{font-size:.84rem;padding:4px 6px!important}
+  .tt.s5t th{font-size:.82rem}
+}
+@media (max-width:380px){
+  .tt.s5t input.txt{width:2.8rem}
+  .tt.s5t td.v{font-size:.76rem;padding:4px 3px!important}
+  .tt.s5t th{font-size:.74rem}
+  .tt.s5t th:not(.m),.tt.s5t td:not(.m){padding:4px 3px}
+}
 /* ===== IPアドレスのしくみ(2)で追加した部品 ===== */
 /* 確認ドリル */
 .drillbox{border:2px solid var(--in-edge);border-radius:12px;padding:12px 14px;margin:10px 0;text-align:center;background:color-mix(in srgb,var(--in) 35%,transparent)}
@@ -516,6 +528,8 @@ select.tsel option{color:var(--ink);background:var(--paper);font-weight:400}
 .vstack{display:grid}
 .vstack .vexp{grid-area:1/1;line-height:1.75}
 .vstack .vexp.vhide{visibility:hidden}
+/* 発展Aの表：入力欄の右に○× */
+.e1t td .mk{grid-column:auto;grid-row:auto;vertical-align:middle;margin-left:2px}
 </style>
 </head>
 <body class="is-top">
@@ -625,6 +639,8 @@ const segSel=(path,opts,label,fmtf)=>{const v=getPath(path);return `<span class=
 /* 問題の1行 */
 const qrow=(no,q,ans,f,ok)=>`<div class="qrow"><div>${no?`<span class="qn">${no}</span>`:''}${q}</div><div class="qa">${ans}</div>${mark(f,ok)||'<span></span>'}</div>`;
 const it=(a,ok)=>({a:!!a,ok:!!ok});
+/* ページid の k番目の問題について [入力したか, 正解か] を返す（○×表示用。判定はダッシュボードと共通） */
+const dk=(id,k)=>{const x=DASH_ITEMS[id]()[k]||{};return [x.a,x.ok];};
 
 /* 32ビットの帯：octs＝4つの数、n＝プレフィックス長（色分け）、opt.lab＝左の見出し、opt.bits＝0/1の配列で直接指定 */
 function strip(octs,n,opt={}){
@@ -1150,12 +1166,12 @@ const screens=[
   ${allocBar()}
   ${sub3('① サブネットを割り当てよう')}
   <div class="scroll"><table class="tt e1t"><thead><tr><th>部屋</th><th>プレフィックス長</th><th>ネットワークアドレス</th><th>ブロードキャストアドレス</th></tr></thead><tbody>
-  ${ROOMS.map((r,i)=>`<tr><td>${r[0]}<br><small class="note">${r[1]}台</small></td><td><span class="fx mono">/</span>${txt(`e1.pre.${i}`,`${r[0]}のプレフィックス長`,'oct')}</td><td>${lastIn('192.168.50.',`e1.na.${i}`,`${r[0]}のネットワークアドレスの第4オクテット`)}</td><td>${lastIn('192.168.50.',`e1.ba.${i}`,`${r[0]}のブロードキャストアドレスの第4オクテット`)}</td></tr>`).join('')}
+  ${ROOMS.map((r,i)=>`<tr><td>${r[0]}<br><small class="note">${r[1]}台</small></td><td><span class="fx mono">/</span>${txt(`e1.pre.${i}`,`${r[0]}のプレフィックス長`,'oct')}${mark(...dk('e1',i*3))}</td><td>${lastIn('192.168.50.',`e1.na.${i}`,`${r[0]}のネットワークアドレスの第4オクテット`)}${mark(...dk('e1',i*3+1))}</td><td>${lastIn('192.168.50.',`e1.ba.${i}`,`${r[0]}のブロードキャストアドレスの第4オクテット`)}${mark(...dk('e1',i*3+2))}</td></tr>`).join('')}
   </tbody></table></div>
   ${sub3('② 残りのアドレス')}
   <div class="qlist">
-  ${qrow('(1)','4つの部屋に割り当てたあと、使わずに残るアドレスの範囲',`${lastIn('192.168.50.','e1.rest','残りの最初のアドレスの第4オクテット')}<span class="mono">〜 192.168.50.255</span>`)}
-  ${qrow('(2)','残りのアドレスで1つのサブネットを作ると、接続できる台数',txt('e1.cnt','接続できる台数','num')+'<span>台</span>')}
+  ${qrow('(1)','4つの部屋に割り当てたあと、使わずに残るアドレスの範囲',`${lastIn('192.168.50.','e1.rest','残りの最初のアドレスの第4オクテット')}<span class="mono">〜 192.168.50.255</span>`,...dk('e1',12))}
+  ${qrow('(2)','残りのアドレスで1つのサブネットを作ると、接続できる台数',txt('e1.cnt','接続できる台数','num')+'<span>台</span>',...dk('e1',13))}
   </div>`},
 
 { id:'e2', rail:'B', name:'発展2 IPv6のネットワーク',
@@ -1178,7 +1194,7 @@ const screens=[
   <tr><td>NAPT</td><td>家庭や学校で広く使う</td><td>アドレスが十分にあるので、ふつうは使わない</td></tr>
   </tbody></table></div>
   ${sub3('問題')}
-  <div class="qlist">${E2Q.map((q,i)=>qrow(`(${i+1})`,q.q,pick(`e2.q.${i}`,q.o,'答え'))).join('')}</div>`;}},
+  <div class="qlist">${E2Q.map((q,i)=>qrow(`(${i+1})`,q.q,pick(`e2.q.${i}`,q.o,'答え'),...dk('e2',i))).join('')}</div>`;}},
 
 { id:'dash', rail:'★', name:'ダッシュボード', render:()=>renderDash() }
 ];
@@ -1192,8 +1208,8 @@ function renderTop(){ document.body.classList.toggle('is-top',showTop); }
 /* ============ 画面の切り替え ============ */
 /* false のあいだは、進捗バーからどのページにも移動できる（true にすると、前のステップをクリアしないと進めない） */
 const LOCK_STEPS = false;
-/* ○×を表示しないステップ（すべて正解でクリア） */
-const NOMARK = new Set(['e1','e2']);
+/* ○×を表示しないステップ（現在はなし。すべてのページで1問ずつ○×を表示する） */
+const NOMARK = new Set([]);
 function accessible(i){
   if(!LOCK_STEPS||unlockAll||i===0||screens[i].id==='dash') return true;
   return accessible(i-1)&&screens[i-1].cleared();
